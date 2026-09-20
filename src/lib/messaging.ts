@@ -229,12 +229,15 @@ export async function createConversation(options: {
   const privateKey = vault.requirePrivateKey();
   const conversationKey = await createConversationKey();
 
-  const { data: conversation, error } = await supabase
-    .from("conversations")
-    .insert({ name: options.isGroup ? (options.name || "Group") : null, is_group: options.isGroup })
-    .select("id")
-    .single();
-  if (error || !conversation) throw new Error("Could not start the conversation.");
+  // The id is generated here: the row cannot be read back after insert until
+  // we are a member of it, so no returning select is possible.
+  const conversationId = crypto.randomUUID();
+  const { error } = await supabase.from("conversations").insert({
+    id: conversationId,
+    name: options.isGroup ? options.name || "Group" : null,
+    is_group: options.isGroup,
+  });
+  if (error) throw new Error("Could not start the conversation.");
 
   const everyone = [options.me, ...options.others];
   for (const member of everyone) {
@@ -245,7 +248,7 @@ export async function createConversation(options: {
       member.public_key,
     );
     const { error: memberError } = await supabase.from("conversation_members").insert({
-      conversation_id: conversation.id,
+      conversation_id: conversationId,
       user_id: member.id,
       wrapped_conversation_key: JSON.stringify({ 1: blob }),
       key_version: 1,
@@ -253,8 +256,8 @@ export async function createConversation(options: {
     if (memberError) throw new Error("Could not share the conversation key with everyone.");
   }
 
-  vault.cacheConversationKeys(conversation.id, new Map([[1, conversationKey]]));
-  return conversation.id;
+  vault.cacheConversationKeys(conversationId, new Map([[1, conversationKey]]));
+  return conversationId;
 }
 
 export async function loadMessages(conversationId: string): Promise<DecryptedMessage[]> {
