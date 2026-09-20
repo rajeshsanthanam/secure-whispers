@@ -14,13 +14,153 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      conversation_members: {
+        Row: {
+          conversation_id: string
+          joined_at: string
+          key_version: number
+          user_id: string
+          wrapped_conversation_key: string
+        }
+        Insert: {
+          conversation_id: string
+          joined_at?: string
+          key_version?: number
+          user_id: string
+          wrapped_conversation_key?: string
+        }
+        Update: {
+          conversation_id?: string
+          joined_at?: string
+          key_version?: number
+          user_id?: string
+          wrapped_conversation_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_members_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversations: {
+        Row: {
+          created_at: string
+          id: string
+          is_group: boolean
+          name: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_group?: boolean
+          name?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_group?: boolean
+          name?: string | null
+        }
+        Relationships: []
+      }
+      messages: {
+        Row: {
+          ciphertext: string
+          conversation_id: string
+          created_at: string
+          id: string
+          iv: string
+          key_version: number
+          sender_id: string
+        }
+        Insert: {
+          ciphertext: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          iv: string
+          key_version?: number
+          sender_id: string
+        }
+        Update: {
+          ciphertext?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          iv?: string
+          key_version?: number
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string
+          encrypted_private_key_blob: string
+          id: string
+          public_key: string
+          salt: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string
+          encrypted_private_key_blob: string
+          id: string
+          public_key: string
+          salt: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          encrypted_private_key_blob?: string
+          id?: string
+          public_key?: string
+          salt?: string
+          username?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_key_material_for_username: {
+        Args: { _username: string }
+        Returns: {
+          encrypted_private_key_blob: string
+          salt: string
+        }[]
+      }
+      get_my_key_material: {
+        Args: never
+        Returns: {
+          display_name: string
+          encrypted_private_key_blob: string
+          public_key: string
+          salt: string
+          username: string
+        }[]
+      }
+      is_conversation_member: {
+        Args: { _conversation_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
