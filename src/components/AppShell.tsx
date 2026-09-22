@@ -27,7 +27,7 @@ export function AppShell({ children, footer }: { children: ReactNode; footer?: R
     <div className="relative min-h-screen w-full overflow-hidden bg-background">
       <Aura />
       <div className="relative z-10 mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+        <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 bg-background/80 backdrop-blur">
           <Link to="/chats" className="flex items-center gap-3">
             <div className="grid size-10 place-items-center rounded-xl bg-accent/15 outline-1 outline-accent/30">
               <span className="size-3.5 rounded-full bg-accent shadow-[0_0_14px] shadow-accent" />
