@@ -143,8 +143,12 @@ function ConversationScreen() {
     <AppShell>
       <div className="flex min-h-[70vh] flex-col overflow-hidden rounded-3xl edge glass">
         <div className="flex items-center gap-3 border-b px-4 py-4 sm:px-5">
-          <Link to="/chats" className="text-sm text-mist hover:text-foreground sm:hidden">
-            ←
+          <Link
+            to="/chats"
+            className="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-mist edge glass transition-colors hover:text-foreground"
+          >
+            <span>←</span>
+            <span>Chats</span>
           </Link>
           <Avatar label={conversation?.title ?? "?"} />
           <div className="min-w-0 flex-1">
