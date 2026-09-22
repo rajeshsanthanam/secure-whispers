@@ -172,6 +172,23 @@ function ConversationScreen() {
 
   const others = conversation?.others ?? [];
 
+  // "Seen" applies to my newest message, once every other member's read
+  // position has reached it. Their read times are never shown.
+  const orderById = new Map(messages.map((message, index) => [message.id, index]));
+  const myLastMessageId = [...messages].reverse().find((m) => m.senderId === myId)?.id ?? null;
+  const myLastIndex = myLastMessageId ? (orderById.get(myLastMessageId) ?? -1) : -1;
+  const seenByAll =
+    myLastIndex >= 0 &&
+    others.length > 0 &&
+    others.every((member) => {
+      const marker = readMarkers.find((entry) => entry.userId === member.id);
+      const readId = marker?.lastReadMessageId;
+      if (!readId) return false;
+      const readIndex = orderById.get(readId);
+      return readIndex !== undefined && readIndex >= myLastIndex;
+    });
+
+
   return (
     <AppShell>
       <div className="flex h-[70vh] flex-col overflow-hidden rounded-3xl edge glass">
