@@ -93,16 +93,41 @@ export async function findProfileByUsername(username: string): Promise<PublicPro
 
 /* ---------------- conversations ---------------- */
 
-const READ_PREFIX = "sm.read.";
+export type ReadMarker = {
+  userId: string;
+  lastReadMessageId: string | null;
+};
 
-export function markConversationRead(conversationId: string, at: string | null) {
-  if (typeof localStorage === "undefined" || !at) return;
-  localStorage.setItem(READ_PREFIX + conversationId, at);
+/**
+ * Store the reader's position server-side so read state follows them across
+ * devices. Only the message id is surfaced to other members — never the time.
+ */
+export async function markConversationRead(
+  conversationId: string,
+  userId: string,
+  lastReadMessageId: string | null,
+) {
+  if (!lastReadMessageId) return;
+  await supabase.from("read_markers").upsert(
+    {
+      conversation_id: conversationId,
+      user_id: userId,
+      last_read_message_id: lastReadMessageId,
+      last_read_at: new Date().toISOString(),
+    },
+    { onConflict: "conversation_id,user_id" },
+  );
 }
 
-function lastReadAt(conversationId: string) {
-  if (typeof localStorage === "undefined") return null;
-  return localStorage.getItem(READ_PREFIX + conversationId);
+export async function listReadMarkers(conversationId: string): Promise<ReadMarker[]> {
+  const { data } = await supabase
+    .from("read_markers")
+    .select("user_id, last_read_message_id")
+    .eq("conversation_id", conversationId);
+  return (data ?? []).map((row) => ({
+    userId: row.user_id,
+    lastReadMessageId: row.last_read_message_id,
+  }));
 }
 
 export async function listConversations(userId: string): Promise<ConversationSummary[]> {
@@ -114,15 +139,28 @@ export async function listConversations(userId: string): Promise<ConversationSum
   const ids = (myRows ?? []).map((r) => r.conversation_id);
   if (!ids.length) return [];
 
-  const [{ data: conversations }, { data: memberRows }, { data: messages }] = await Promise.all([
-    supabase.from("conversations").select("id, name, is_group, created_at").in("id", ids),
-    supabase.from("conversation_members").select("conversation_id, user_id").in("conversation_id", ids),
-    supabase
-      .from("messages")
-      .select("id, conversation_id, sender_id, ciphertext, iv, key_version, created_at")
-      .in("conversation_id", ids)
-      .order("created_at", { ascending: false }),
-  ]);
+  const [{ data: conversations }, { data: memberRows }, { data: messages }, { data: myMarkers }] =
+    await Promise.all([
+      supabase.from("conversations").select("id, name, is_group, created_at").in("id", ids),
+      supabase
+        .from("conversation_members")
+        .select("conversation_id, user_id")
+        .in("conversation_id", ids),
+      supabase
+        .from("messages")
+        .select("id, conversation_id, sender_id, ciphertext, iv, key_version, created_at")
+        .in("conversation_id", ids)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("read_markers")
+        .select("conversation_id, last_read_message_id")
+        .eq("user_id", userId)
+        .in("conversation_id", ids),
+    ]);
+
+  const myReadMessageId = new Map(
+    (myMarkers ?? []).map((row) => [row.conversation_id, row.last_read_message_id]),
+  );
 
   const otherIds = Array.from(
     new Set((memberRows ?? []).map((m) => m.user_id).filter((id) => id !== userId)),
@@ -161,7 +199,7 @@ export async function listConversations(userId: string): Promise<ConversationSum
       }
     }
 
-    const read = lastReadAt(conversation.id);
+    const readMessageId = myReadMessageId.get(conversation.id) ?? null;
     summaries.push({
       id: conversation.id,
       name: conversation.name,
@@ -175,9 +213,7 @@ export async function listConversations(userId: string): Promise<ConversationSum
       lastMessagePreview: preview,
       lastMessageAt: latest?.created_at ?? null,
       unread: Boolean(
-        latest &&
-          latest.sender_id !== userId &&
-          (!read || new Date(latest.created_at) > new Date(read)),
+        latest && latest.sender_id !== userId && readMessageId !== latest.id,
       ),
     });
   }

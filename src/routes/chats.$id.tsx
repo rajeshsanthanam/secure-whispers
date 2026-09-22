@@ -9,12 +9,14 @@ import { useAuth } from "@/lib/auth";
 import {
   decryptSingleMessage,
   getConversation,
+  listReadMarkers,
   loadMessages,
   markConversationRead,
   removeMemberAndRotate,
   sendMessage,
   type DecryptedMessage,
   type PublicProfile,
+  type ReadMarker,
 } from "@/lib/messaging";
 
 export const Route = createFileRoute("/chats/$id")({
@@ -51,15 +53,22 @@ function ConversationScreen() {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showMembers, setShowMembers] = useState(false);
+  const [readMarkers, setReadMarkers] = useState<ReadMarker[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const myId = profile?.id ?? null;
 
   const refresh = useCallback(async () => {
     if (!profile) return;
     try {
-      const [meta, history] = await Promise.all([getConversation(id, profile.id), loadMessages(id)]);
+      const [meta, history, markers] = await Promise.all([
+        getConversation(id, profile.id),
+        loadMessages(id),
+        listReadMarkers(id),
+      ]);
       setConversation(meta);
       setMessages(history);
-      markConversationRead(id, history.at(-1)?.createdAt ?? null);
+      setReadMarkers(markers);
+      await markConversationRead(id, profile.id, history.at(-1)?.id ?? null);
     } catch (loadError) {
       setError((loadError as Error).message);
     }
@@ -90,7 +99,31 @@ function ConversationScreen() {
                 ? current
                 : [...current, message],
             );
-            markConversationRead(id, message.createdAt);
+            if (myId) void markConversationRead(id, myId, message.id);
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [id, myId]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`read-markers-${id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "read_markers", filter: `conversation_id=eq.${id}` },
+        (payload) => {
+          const row = payload.new as { user_id?: string; last_read_message_id?: string | null };
+          if (!row?.user_id) return;
+          // Only the reader's position is tracked in state; timestamps are ignored.
+          setReadMarkers((current) => {
+            const next = current.filter((marker) => marker.userId !== row.user_id);
+            next.push({ userId: row.user_id!, lastReadMessageId: row.last_read_message_id ?? null });
+            return next;
           });
         },
       )
@@ -138,6 +171,23 @@ function ConversationScreen() {
   }
 
   const others = conversation?.others ?? [];
+
+  // "Seen" applies to my newest message, once every other member's read
+  // position has reached it. Their read times are never shown.
+  const orderById = new Map(messages.map((message, index) => [message.id, index]));
+  const myLastMessageId = [...messages].reverse().find((m) => m.senderId === myId)?.id ?? null;
+  const myLastIndex = myLastMessageId ? (orderById.get(myLastMessageId) ?? -1) : -1;
+  const seenByAll =
+    myLastIndex >= 0 &&
+    others.length > 0 &&
+    others.every((member) => {
+      const marker = readMarkers.find((entry) => entry.userId === member.id);
+      const readId = marker?.lastReadMessageId;
+      if (!readId) return false;
+      const readIndex = orderById.get(readId);
+      return readIndex !== undefined && readIndex >= myLastIndex;
+    });
+
 
   return (
     <AppShell>
@@ -240,6 +290,9 @@ function ConversationScreen() {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
+                    {mine && seenByAll && message.id === myLastMessageId ? (
+                      <span className="ml-1.5 text-accent-soft">· Seen</span>
+                    ) : null}
                   </p>
                 </div>
               </div>
