@@ -53,15 +53,22 @@ function ConversationScreen() {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showMembers, setShowMembers] = useState(false);
+  const [readMarkers, setReadMarkers] = useState<ReadMarker[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const myId = profile?.id ?? null;
 
   const refresh = useCallback(async () => {
     if (!profile) return;
     try {
-      const [meta, history] = await Promise.all([getConversation(id, profile.id), loadMessages(id)]);
+      const [meta, history, markers] = await Promise.all([
+        getConversation(id, profile.id),
+        loadMessages(id),
+        listReadMarkers(id),
+      ]);
       setConversation(meta);
       setMessages(history);
-      markConversationRead(id, history.at(-1)?.createdAt ?? null);
+      setReadMarkers(markers);
+      await markConversationRead(id, profile.id, history.at(-1)?.id ?? null);
     } catch (loadError) {
       setError((loadError as Error).message);
     }
@@ -92,7 +99,31 @@ function ConversationScreen() {
                 ? current
                 : [...current, message],
             );
-            markConversationRead(id, message.createdAt);
+            if (myId) void markConversationRead(id, myId, message.id);
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [id, myId]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`read-markers-${id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "read_markers", filter: `conversation_id=eq.${id}` },
+        (payload) => {
+          const row = payload.new as { user_id?: string; last_read_message_id?: string | null };
+          if (!row?.user_id) return;
+          // Only the reader's position is tracked in state; timestamps are ignored.
+          setReadMarkers((current) => {
+            const next = current.filter((marker) => marker.userId !== row.user_id);
+            next.push({ userId: row.user_id!, lastReadMessageId: row.last_read_message_id ?? null });
+            return next;
           });
         },
       )
