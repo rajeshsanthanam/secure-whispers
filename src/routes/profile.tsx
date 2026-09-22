@@ -13,13 +13,12 @@ export const Route = createFileRoute("/profile")({
       { title: "Your profile — Secure Messenger" },
       {
         name: "description",
-        content:
-          "Your display name, username, key fingerprint, and the current limitations of this app's encryption.",
+        content: "Your display name, username, key fingerprint, and how this app's encryption works.",
       },
       { property: "og:title", content: "Your profile — Secure Messenger" },
       {
         property: "og:description",
-        content: "Your display name, username, key fingerprint, and current encryption limitations.",
+        content: "Your display name, username, key fingerprint, and how the encryption works.",
       },
     ],
   }),
