@@ -1,9 +1,28 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { Aura } from "@/components/Aura";
+import { useAuth } from "@/lib/auth";
 
 export function AppShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
+  const { signOut } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function handleSignOut() {
+    if (signingOut) return;
+    const confirmed = window.confirm(
+      "Sign out? Your encryption keys are wiped from this browser's memory, so you'll need your password to unlock your messages again.",
+    );
+    if (!confirmed) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-background">
       <Aura />
@@ -41,6 +60,14 @@ export function AppShell({ children, footer }: { children: ReactNode; footer?: R
             >
               Profile
             </Link>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="rounded-full px-3 py-1.5 text-xs font-medium text-mist edge glass transition-colors hover:text-foreground disabled:opacity-50"
+            >
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
           </nav>
         </header>
 
