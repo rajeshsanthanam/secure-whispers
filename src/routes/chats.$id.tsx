@@ -290,6 +290,9 @@ function ConversationScreen() {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
+                    {mine && seenByAll && message.id === myLastMessageId ? (
+                      <span className="ml-1.5 text-accent-soft">· Seen</span>
+                    ) : null}
                   </p>
                 </div>
               </div>
