@@ -43,7 +43,7 @@ function ProfileScreen() {
   }, [profile]);
 
   return (
-    <AppShell footer={<span />}>
+    <AppShell>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="rounded-3xl p-6 edge glass">
           <div className="flex items-center gap-3">
@@ -109,30 +109,6 @@ function ProfileScreen() {
         </div>
 
         <div className="space-y-6">
-          <section className="rounded-3xl p-6 edge glass">
-            <h2 className="font-display text-lg font-semibold text-foreground">
-              Current limitations
-            </h2>
-            <p className="mt-2 text-sm leading-relaxed text-mist">
-              Encryption here protects message content from the server operator. It does not do
-              everything a mature secure messenger does:
-            </p>
-            <ul className="mt-4 space-y-3 text-sm text-mist">
-              {[
-                "No forward secrecy: if your password is compromised, past messages can be decrypted.",
-                "No out-of-band key verification: a compromised server could substitute a contact's public key.",
-                "No password recovery: a forgotten password means the account and history are unrecoverable.",
-                "Removing a group member rotates the key going forward; earlier messages stay under the old key they already held.",
-                "No attachments, read receipts or typing indicators in this version.",
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-3">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warning" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </section>
-
           <section className="rounded-3xl p-6 edge glass">
             <h2 className="font-display text-lg font-semibold text-foreground">How it works</h2>
             <ul className="mt-4 space-y-3 text-sm text-mist">

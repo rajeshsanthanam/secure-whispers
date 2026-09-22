@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { Aura } from "@/components/Aura";
 import { useAuth } from "@/lib/auth";
 
-export function AppShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
+export function AppShell({ children }: { children: ReactNode }) {
   const { signOut } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
 
@@ -72,32 +72,7 @@ export function AppShell({ children, footer }: { children: ReactNode; footer?: R
         </header>
 
         <div className="mt-8">{children}</div>
-
-        {footer ?? <LimitationsPanel />}
       </div>
-    </div>
-  );
-}
-
-export function LimitationsPanel() {
-  return (
-    <div className="mt-6 flex flex-col gap-4 rounded-3xl p-4 edge glass sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-warning/10 text-warning outline-1 outline-warning/25">
-          !
-        </span>
-        <p className="max-w-md text-sm leading-relaxed text-mist">
-          <span className="font-semibold text-foreground">Current limitations:</span> this protects
-          message content from the server operator, but has no forward secrecy and no out-of-band
-          key verification.{" "}
-          <Link to="/profile" className="text-accent-soft underline-offset-2 hover:underline">
-            Read the details
-          </Link>
-        </p>
-      </div>
-      <span className="shrink-0 rounded-full bg-accent/8 px-3 py-1.5 text-xs font-medium text-accent-soft outline-1 outline-accent/25">
-        No password recovery
-      </span>
     </div>
   );
 }
