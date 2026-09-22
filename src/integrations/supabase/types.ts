@@ -149,6 +149,15 @@ export type Database = {
         }
         Returns: undefined
       }
+      find_profile_by_username: {
+        Args: { _username: string }
+        Returns: {
+          display_name: string
+          id: string
+          public_key: string
+          username: string
+        }[]
+      }
       get_key_material_for_username: {
         Args: { _username: string }
         Returns: {
@@ -168,6 +177,10 @@ export type Database = {
       }
       is_conversation_member: {
         Args: { _conversation_id: string; _user_id: string }
+        Returns: boolean
+      }
+      shares_conversation: {
+        Args: { _a: string; _b: string }
         Returns: boolean
       }
     }
