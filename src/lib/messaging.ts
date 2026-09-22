@@ -199,7 +199,7 @@ export async function listConversations(userId: string): Promise<ConversationSum
       }
     }
 
-    const read = lastReadAt(conversation.id);
+    const readMessageId = myReadMessageId.get(conversation.id) ?? null;
     summaries.push({
       id: conversation.id,
       name: conversation.name,
