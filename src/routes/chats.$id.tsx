@@ -141,7 +141,7 @@ function ConversationScreen() {
 
   return (
     <AppShell>
-      <div className="flex min-h-[70vh] flex-col overflow-hidden rounded-3xl edge glass">
+      <div className="flex h-[70vh] flex-col overflow-hidden rounded-3xl edge glass">
         <div className="flex items-center gap-3 border-b px-4 py-4 sm:px-5">
           <Link
             to="/chats"
