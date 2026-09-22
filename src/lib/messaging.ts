@@ -83,13 +83,12 @@ export async function loadConversationKeys(conversationId: string) {
 /* ---------------- lookups ---------------- */
 
 export async function findProfileByUsername(username: string): Promise<PublicProfile | null> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, username, display_name, public_key")
-    .eq("username", normalizeUsername(username))
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("find_profile_by_username", {
+    _username: normalizeUsername(username),
+  });
   if (error) return null;
-  return (data as PublicProfile | null) ?? null;
+  const row = (Array.isArray(data) ? data[0] : data) as PublicProfile | undefined;
+  return row ?? null;
 }
 
 /* ---------------- conversations ---------------- */
