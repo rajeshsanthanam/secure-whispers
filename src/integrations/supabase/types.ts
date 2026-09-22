@@ -67,6 +67,27 @@ export type Database = {
         }
         Relationships: []
       }
+      login_attempts: {
+        Row: {
+          blocked_until: string
+          fails: number
+          updated_at: string
+          username: string
+        }
+        Insert: {
+          blocked_until?: string
+          fails?: number
+          updated_at?: string
+          username: string
+        }
+        Update: {
+          blocked_until?: string
+          fails?: number
+          updated_at?: string
+          username?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           ciphertext: string
@@ -140,6 +161,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_and_record_login_attempt: {
+        Args: { _success: boolean; _username: string }
+        Returns: {
+          allowed: boolean
+          retry_after_seconds: number
+        }[]
+      }
       create_conversation: {
         Args: {
           _id: string
@@ -179,6 +207,7 @@ export type Database = {
         Args: { _conversation_id: string; _user_id: string }
         Returns: boolean
       }
+      peek_login_block: { Args: { _username: string }; Returns: number }
       shares_conversation: {
         Args: { _a: string; _b: string }
         Returns: boolean
