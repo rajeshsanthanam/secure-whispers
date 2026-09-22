@@ -93,16 +93,41 @@ export async function findProfileByUsername(username: string): Promise<PublicPro
 
 /* ---------------- conversations ---------------- */
 
-const READ_PREFIX = "sm.read.";
+export type ReadMarker = {
+  userId: string;
+  lastReadMessageId: string | null;
+};
 
-export function markConversationRead(conversationId: string, at: string | null) {
-  if (typeof localStorage === "undefined" || !at) return;
-  localStorage.setItem(READ_PREFIX + conversationId, at);
+/**
+ * Store the reader's position server-side so read state follows them across
+ * devices. Only the message id is surfaced to other members — never the time.
+ */
+export async function markConversationRead(
+  conversationId: string,
+  userId: string,
+  lastReadMessageId: string | null,
+) {
+  if (!lastReadMessageId) return;
+  await supabase.from("read_markers").upsert(
+    {
+      conversation_id: conversationId,
+      user_id: userId,
+      last_read_message_id: lastReadMessageId,
+      last_read_at: new Date().toISOString(),
+    },
+    { onConflict: "conversation_id,user_id" },
+  );
 }
 
-function lastReadAt(conversationId: string) {
-  if (typeof localStorage === "undefined") return null;
-  return localStorage.getItem(READ_PREFIX + conversationId);
+export async function listReadMarkers(conversationId: string): Promise<ReadMarker[]> {
+  const { data } = await supabase
+    .from("read_markers")
+    .select("user_id, last_read_message_id")
+    .eq("conversation_id", conversationId);
+  return (data ?? []).map((row) => ({
+    userId: row.user_id,
+    lastReadMessageId: row.last_read_message_id,
+  }));
 }
 
 export async function listConversations(userId: string): Promise<ConversationSummary[]> {
