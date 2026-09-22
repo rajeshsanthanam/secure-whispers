@@ -242,7 +242,8 @@ export async function createConversation(options: {
   );
   const { error } = await supabase.rpc("create_conversation", {
     _id: conversationId,
-    _name: options.isGroup ? options.name || "Group" : null,
+    // Generated types mark _name non-null; direct chats legitimately pass null.
+    _name: (options.isGroup ? options.name || "Group" : null) as string,
     _is_group: options.isGroup,
     _wrapped_key: JSON.stringify({ 1: creatorBlob }),
   });
