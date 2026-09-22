@@ -204,21 +204,6 @@ function WelcomeScreen() {
           </div>
         </div>
 
-        <div className="mt-6 flex flex-col gap-4 rounded-3xl p-4 edge glass sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-warning/10 text-warning outline-1 outline-warning/25">
-              !
-            </span>
-            <p className="max-w-md text-sm leading-relaxed text-mist">
-              <span className="font-semibold text-foreground">Current limitations:</span> this
-              protects message content from the server operator, but has no forward secrecy and no
-              out-of-band key verification.
-            </p>
-          </div>
-          <span className="shrink-0 rounded-full bg-accent/8 px-3 py-1.5 text-xs font-medium text-accent-soft outline-1 outline-accent/25">
-            No password recovery
-          </span>
-        </div>
       </div>
     </div>
   );

@@ -21,7 +21,7 @@ export function Protected({ children }: { children: ReactNode }) {
 
   if (loading || !session) {
     return (
-      <AppShell footer={<span />}>
+      <AppShell>
         <div className="rounded-3xl p-8 text-sm text-mist edge glass">Loading…</div>
       </AppShell>
     );
