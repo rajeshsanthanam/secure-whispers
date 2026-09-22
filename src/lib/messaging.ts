@@ -213,9 +213,7 @@ export async function listConversations(userId: string): Promise<ConversationSum
       lastMessagePreview: preview,
       lastMessageAt: latest?.created_at ?? null,
       unread: Boolean(
-        latest &&
-          latest.sender_id !== userId &&
-          (!read || new Date(latest.created_at) > new Date(read)),
+        latest && latest.sender_id !== userId && readMessageId !== latest.id,
       ),
     });
   }
