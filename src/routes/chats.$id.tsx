@@ -204,7 +204,7 @@ function ConversationScreen() {
           </div>
         ) : null}
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-6 sm:px-5">
+        <div className="flex-1 min-h-0 space-y-4 overflow-y-auto px-4 py-6 sm:px-5">
           <div className="flex justify-center">
             <span className="rounded-full px-3 py-1 text-[10px] font-medium tracking-[0.15em] text-mist/60 uppercase edge glass-plain">
               Encrypted end-to-end
