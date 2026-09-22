@@ -139,15 +139,28 @@ export async function listConversations(userId: string): Promise<ConversationSum
   const ids = (myRows ?? []).map((r) => r.conversation_id);
   if (!ids.length) return [];
 
-  const [{ data: conversations }, { data: memberRows }, { data: messages }] = await Promise.all([
-    supabase.from("conversations").select("id, name, is_group, created_at").in("id", ids),
-    supabase.from("conversation_members").select("conversation_id, user_id").in("conversation_id", ids),
-    supabase
-      .from("messages")
-      .select("id, conversation_id, sender_id, ciphertext, iv, key_version, created_at")
-      .in("conversation_id", ids)
-      .order("created_at", { ascending: false }),
-  ]);
+  const [{ data: conversations }, { data: memberRows }, { data: messages }, { data: myMarkers }] =
+    await Promise.all([
+      supabase.from("conversations").select("id, name, is_group, created_at").in("id", ids),
+      supabase
+        .from("conversation_members")
+        .select("conversation_id, user_id")
+        .in("conversation_id", ids),
+      supabase
+        .from("messages")
+        .select("id, conversation_id, sender_id, ciphertext, iv, key_version, created_at")
+        .in("conversation_id", ids)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("read_markers")
+        .select("conversation_id, last_read_message_id")
+        .eq("user_id", userId)
+        .in("conversation_id", ids),
+    ]);
+
+  const myReadMessageId = new Map(
+    (myMarkers ?? []).map((row) => [row.conversation_id, row.last_read_message_id]),
+  );
 
   const otherIds = Array.from(
     new Set((memberRows ?? []).map((m) => m.user_id).filter((id) => id !== userId)),
