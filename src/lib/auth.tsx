@@ -7,11 +7,8 @@ import * as vault from "@/lib/key-vault";
 import {
   checkPassword,
   checkUsername,
-  clearLoginFailures,
   formatCooldown,
-  loginCooldown,
   normalizeUsername,
-  recordLoginFailure,
   syntheticEmail,
 } from "@/lib/password-policy";
 
@@ -143,7 +140,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         displayName: displayName.trim() || normalized,
         publicKey: identity.publicKey,
       });
-      clearLoginFailures(normalized);
     },
     [],
   );
@@ -159,22 +155,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(
     async (username: string, password: string) => {
       const normalized = normalizeUsername(username);
-      const cooldown = loginCooldown(normalized);
-      if (cooldown > 0) {
-        throw new Error(`Too many failed attempts. Try again in ${formatCooldown(cooldown)}.`);
-      }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: syntheticEmail(normalized),
-        password,
+      const response = await fetch("/api/public/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: normalized, password }),
       });
-      if (error || !data.user) {
-        recordLoginFailure(normalized);
+      const body = (await response.json().catch(() => ({}))) as {
+        access_token?: string;
+        refresh_token?: string;
+        retry_after_seconds?: number;
+        error?: string;
+      };
+
+      if (response.status === 429) {
+        const wait = formatCooldown((body.retry_after_seconds ?? 60) * 1000);
+        throw new Error(`Too many failed attempts. Try again in ${wait}.`);
+      }
+      if (!response.ok || !body.access_token || !body.refresh_token) {
         throw new Error("Incorrect username or password.");
       }
 
+      const { data, error } = await supabase.auth.setSession({
+        access_token: body.access_token,
+        refresh_token: body.refresh_token,
+      });
+      if (error || !data.user) throw new Error("Could not start your session. Try again.");
+
       const row = await loadKeys(password);
-      clearLoginFailures(normalized);
       setProfile({
         id: data.user.id,
         username: row.username,

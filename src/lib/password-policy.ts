@@ -121,50 +121,7 @@ export function syntheticEmail(username: string) {
   return `${normalizeUsername(username)}@app.local`;
 }
 
-/* ---------- login throttle (per username, exponential backoff) ---------- */
-
-type Attempt = { fails: number; blockedUntil: number };
-
-const THROTTLE_PREFIX = "sm.throttle.";
-const FREE_ATTEMPTS = 5;
-
-function readAttempt(username: string): Attempt {
-  if (typeof localStorage === "undefined") return { fails: 0, blockedUntil: 0 };
-  try {
-    const raw = localStorage.getItem(THROTTLE_PREFIX + normalizeUsername(username));
-    return raw ? (JSON.parse(raw) as Attempt) : { fails: 0, blockedUntil: 0 };
-  } catch {
-    return { fails: 0, blockedUntil: 0 };
-  }
-}
-
-function writeAttempt(username: string, attempt: Attempt) {
-  if (typeof localStorage === "undefined") return;
-  localStorage.setItem(THROTTLE_PREFIX + normalizeUsername(username), JSON.stringify(attempt));
-}
-
-/** Milliseconds the user still has to wait, or 0 when a sign-in is allowed. */
-export function loginCooldown(username: string): number {
-  const { blockedUntil } = readAttempt(username);
-  return Math.max(0, blockedUntil - Date.now());
-}
-
-export function recordLoginFailure(username: string) {
-  const attempt = readAttempt(username);
-  const fails = attempt.fails + 1;
-  let blockedUntil = 0;
-  if (fails > FREE_ATTEMPTS) {
-    const seconds = Math.min(15 * 60, 5 * 2 ** (fails - FREE_ATTEMPTS - 1));
-    blockedUntil = Date.now() + seconds * 1000;
-  }
-  writeAttempt(username, { fails, blockedUntil });
-}
-
-export function clearLoginFailures(username: string) {
-  if (typeof localStorage === "undefined") return;
-  localStorage.removeItem(THROTTLE_PREFIX + normalizeUsername(username));
-}
-
+/** Login throttling lives server-side (see /api/public/login). */
 export function formatCooldown(ms: number) {
   const seconds = Math.ceil(ms / 1000);
   if (seconds < 60) return `${seconds}s`;

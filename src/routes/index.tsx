@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import { Aura } from "@/components/Aura";
 import { useAuth } from "@/lib/auth";
-import { checkPassword, formatCooldown, loginCooldown } from "@/lib/password-policy";
+import { checkPassword } from "@/lib/password-policy";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -40,7 +40,6 @@ function WelcomeScreen() {
   }, [session, unlocked, navigate]);
 
   const strength = checkPassword(password);
-  const cooldown = username ? loginCooldown(username) : 0;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -179,12 +178,6 @@ function WelcomeScreen() {
                 </div>
               ) : null}
 
-              {cooldown > 0 && mode === "signin" ? (
-                <p className="text-xs text-warning">
-                  Too many failed attempts for this username. Try again in{" "}
-                  {formatCooldown(cooldown)}.
-                </p>
-              ) : null}
               {error ? <p className="text-xs text-destructive">{error}</p> : null}
 
               <button
