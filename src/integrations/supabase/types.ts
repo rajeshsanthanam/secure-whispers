@@ -140,6 +140,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_conversation: {
+        Args: {
+          _id: string
+          _is_group: boolean
+          _name: string
+          _wrapped_key: string
+        }
+        Returns: undefined
+      }
       get_key_material_for_username: {
         Args: { _username: string }
         Returns: {

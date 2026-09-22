@@ -232,15 +232,24 @@ export async function createConversation(options: {
   // The id is generated here: the row cannot be read back after insert until
   // we are a member of it, so no returning select is possible.
   const conversationId = crypto.randomUUID();
-  const { error } = await supabase.from("conversations").insert({
-    id: conversationId,
-    name: options.isGroup ? options.name || "Group" : null,
-    is_group: options.isGroup,
+
+  // Atomically create the conversation and the creator's membership row.
+  const creatorBlob = await wrapConversationKey(
+    conversationKey,
+    privateKey,
+    options.me.public_key,
+    options.me.public_key,
+  );
+  const { error } = await supabase.rpc("create_conversation", {
+    _id: conversationId,
+    // Generated types mark _name non-null; direct chats legitimately pass null.
+    _name: (options.isGroup ? options.name || "Group" : null) as string,
+    _is_group: options.isGroup,
+    _wrapped_key: JSON.stringify({ 1: creatorBlob }),
   });
   if (error) throw new Error("Could not start the conversation.");
 
-  const everyone = [options.me, ...options.others];
-  for (const member of everyone) {
+  for (const member of options.others) {
     const blob = await wrapConversationKey(
       conversationKey,
       privateKey,
