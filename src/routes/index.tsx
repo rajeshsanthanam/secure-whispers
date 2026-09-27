@@ -15,6 +15,8 @@ export const Route = createFileRoute("/")({
           "Sign in with a username and password. Messages are encrypted in your browser; keys never leave your device unencrypted.",
       },
       { property: "og:title", content: "Secure Messenger — encrypted chat, username only" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       {
         property: "og:description",
         content:

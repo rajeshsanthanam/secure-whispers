@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep reactions as encrypted per-user rows keyed by message and encryption version; decrypt with conversation keys in the browser so old reactions survive key rotation.

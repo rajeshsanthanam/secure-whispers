@@ -4,20 +4,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
 import { Protected } from "@/components/Protected";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import {
   decryptSingleMessage,
   getConversation,
+  loadReactions,
   listReadMarkers,
   loadMessages,
   markConversationRead,
   removeMemberAndRotate,
   sendMessage,
+  toggleReaction,
   type DecryptedMessage,
   type PublicProfile,
   type ReadMarker,
+  type MessageReactions,
 } from "@/lib/messaging";
+
+const REACTION_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 export const Route = createFileRoute("/chats/$id")({
   head: () => ({
@@ -28,6 +34,8 @@ export const Route = createFileRoute("/chats/$id")({
         content: "An end-to-end encrypted conversation, decrypted locally in your browser.",
       },
       { property: "og:title", content: "Conversation — Secure Messenger" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       {
         property: "og:description",
         content: "An end-to-end encrypted conversation, decrypted locally in your browser.",
@@ -54,6 +62,10 @@ function ConversationScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showMembers, setShowMembers] = useState(false);
   const [readMarkers, setReadMarkers] = useState<ReadMarker[]>([]);
+  const [reactions, setReactions] = useState<MessageReactions>({});
+  const [reactionPicker, setReactionPicker] = useState<string | null>(null);
+  const [reactionPending, setReactionPending] = useState<string | null>(null);
+  const messageIdsRef = useRef<string[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const myId = profile?.id ?? null;
 
@@ -68,11 +80,42 @@ function ConversationScreen() {
       setConversation(meta);
       setMessages(history);
       setReadMarkers(markers);
+      setReactions(await loadReactions(id, history.map((message) => message.id)));
       await markConversationRead(id, profile.id, history.at(-1)?.id ?? null);
     } catch (loadError) {
       setError((loadError as Error).message);
     }
   }, [id, profile]);
+
+  messageIdsRef.current = messages.map((message) => message.id);
+
+  const refreshReactions = useCallback(async () => {
+    try {
+      const ids = messageIdsRef.current;
+      setReactions(await loadReactions(id, ids));
+    } catch (reactionError) {
+      setError((reactionError as Error).message);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void refreshReactions();
+  }, [messages.length, refreshReactions]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`reactions-${id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "message_reactions" },
+        (payload) => {
+          const row = (payload.new && Object.keys(payload.new).length ? payload.new : payload.old) as { message_id?: string };
+          if (row?.message_id && messageIdsRef.current.includes(row.message_id)) void refreshReactions();
+        },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [id, refreshReactions]);
 
   useEffect(() => {
     void refresh();
@@ -167,6 +210,21 @@ function ConversationScreen() {
       await refresh();
     } catch (removeError) {
       setError((removeError as Error).message);
+    }
+  }
+
+  async function handleReaction(messageId: string, emoji: string) {
+    if (!profile || reactionPending) return;
+    setReactionPending(messageId);
+    setReactionPicker(null);
+    setError(null);
+    try {
+      await toggleReaction(id, messageId, profile.id, emoji);
+      await refreshReactions();
+    } catch (reactionError) {
+      setError((reactionError as Error).message);
+    } finally {
+      setReactionPending(null);
     }
   }
 
@@ -267,22 +325,65 @@ function ConversationScreen() {
             const mine = message.senderId === profile?.id;
             const sender = others.find((person) => person.id === message.senderId);
             return (
-              <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+              <div key={message.id} className={`group flex ${mine ? "justify-end" : "justify-start"}`}>
                 <div className="max-w-[78%]">
                   {conversation?.isGroup && !mine ? (
                     <p className="mb-1 px-1 text-[10px] text-mist/60">
                       {sender?.display_name || sender?.username || "Unknown"}
                     </p>
                   ) : null}
-                  <div
-                    className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                      mine
-                        ? "rounded-tr-md text-foreground bubble-mine"
-                        : "rounded-tl-md text-mist edge glass-strong"
-                    }`}
-                  >
-                    {message.body}
+                  <div className={`flex items-end gap-1.5 ${mine ? "flex-row-reverse" : "flex-row"}`}>
+                    <div
+                      className={`min-w-0 break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                        mine
+                          ? "rounded-tr-md text-foreground bubble-mine"
+                          : "rounded-tl-md text-mist edge glass-strong"
+                      }`}
+                    >
+                      {message.body}
+                    </div>
+                    <div className="shrink-0">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="React to message"
+                        title="React to message"
+                        aria-expanded={reactionPicker === message.id}
+                        disabled={reactionPending === message.id}
+                        onClick={() => setReactionPicker((current) => current === message.id ? null : message.id)}
+                        className="size-7 text-mist/70 opacity-70 hover:text-accent-soft focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                      >
+                        <span aria-hidden="true">☺</span>
+                      </Button>
+                    </div>
                   </div>
+                  {reactionPicker === message.id ? (
+                    <div className={`mt-1 flex max-w-full flex-wrap gap-0.5 rounded-md p-1.5 edge glass-strong ${mine ? "justify-end" : "justify-start"}`} role="group" aria-label="Choose a reaction">
+                      {REACTION_EMOJI.map((emoji) => (
+                        <Button key={emoji} type="button" variant="ghost" size="icon" className="size-8 text-lg" aria-label={`React ${emoji}`} onClick={() => void handleReaction(message.id, emoji)}>{emoji}</Button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {Object.entries(reactions[message.id] ?? {}).length ? (
+                    <div className={`mt-1 flex flex-wrap gap-1 ${mine ? "justify-end" : "justify-start"}`}>
+                      {Object.entries(reactions[message.id] ?? {}).map(([emoji, users]) => (
+                        <Button
+                          key={emoji}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          aria-label={`${emoji} ${users.length} ${users.length === 1 ? "reaction" : "reactions"}${users.includes(profile?.id ?? "") ? ", including yours" : ""}`}
+                          aria-pressed={users.includes(profile?.id ?? "")}
+                          disabled={reactionPending === message.id}
+                          onClick={() => void handleReaction(message.id, emoji)}
+                          className={`h-7 gap-1 rounded-full border-border px-2 text-xs ${users.includes(profile?.id ?? "") ? "border-accent/50 bg-accent/10 text-accent-soft" : "bg-card/50 text-mist"}`}
+                        >
+                          <span>{emoji}</span><span>{users.length}</span>
+                        </Button>
+                      ))}
+                    </div>
+                  ) : null}
                   <p
                     className={`mt-1 px-1 text-[10px] text-mist/50 ${mine ? "text-right" : "text-left"}`}
                   >
