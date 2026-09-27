@@ -352,7 +352,7 @@ function ConversationScreen() {
                         aria-expanded={reactionPicker === message.id}
                         disabled={reactionPending === message.id}
                         onClick={() => setReactionPicker((current) => current === message.id ? null : message.id)}
-                        className="size-7 text-mist/70 opacity-70 hover:text-accent-soft focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                        className="size-7 text-mist/70 opacity-60 hover:opacity-100 hover:text-accent-soft focus-visible:opacity-100"
                       >
                         <span aria-hidden="true">☺</span>
                       </Button>
