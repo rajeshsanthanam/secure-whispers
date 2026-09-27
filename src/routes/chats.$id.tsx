@@ -340,7 +340,7 @@ function ConversationScreen() {
                     >
                       {message.body}
                     </div>
-                    <div className="relative shrink-0">
+                    <div className="shrink-0">
                       <Button
                         type="button"
                         variant="ghost"
@@ -354,15 +354,15 @@ function ConversationScreen() {
                       >
                         <span aria-hidden="true">☺</span>
                       </Button>
-                      {reactionPicker === message.id ? (
-                        <div className={`absolute bottom-full z-10 mb-2 flex gap-0.5 rounded-md p-1.5 edge glass-strong shadow-lg ${mine ? "right-0" : "left-0"}`} role="group" aria-label="Choose a reaction">
-                          {REACTION_EMOJI.map((emoji) => (
-                            <Button key={emoji} type="button" variant="ghost" size="icon" className="size-8 text-lg" aria-label={`React ${emoji}`} onClick={() => void handleReaction(message.id, emoji)}>{emoji}</Button>
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
                   </div>
+                  {reactionPicker === message.id ? (
+                    <div className={`mt-1 flex max-w-full flex-wrap gap-0.5 rounded-md p-1.5 edge glass-strong ${mine ? "justify-end" : "justify-start"}`} role="group" aria-label="Choose a reaction">
+                      {REACTION_EMOJI.map((emoji) => (
+                        <Button key={emoji} type="button" variant="ghost" size="icon" className="size-8 text-lg" aria-label={`React ${emoji}`} onClick={() => void handleReaction(message.id, emoji)}>{emoji}</Button>
+                      ))}
+                    </div>
+                  ) : null}
                   {Object.entries(reactions[message.id] ?? {}).length ? (
                     <div className={`mt-1 flex flex-wrap gap-1 ${mine ? "justify-end" : "justify-start"}`}>
                       {Object.entries(reactions[message.id] ?? {}).map(([emoji, users]) => (
