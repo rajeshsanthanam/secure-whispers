@@ -23,7 +23,7 @@ import {
   type MessageReactions,
 } from "@/lib/messaging";
 
-const REACTION_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const REACTION_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "🎉", "👏", "😍", "🤔", "👎"];
 
 export const Route = createFileRoute("/chats/$id")({
   head: () => ({
