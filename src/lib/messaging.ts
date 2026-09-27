@@ -1,7 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
   createConversationKey,
+  decryptBytes,
   decryptMessage,
+  encryptBytes,
   encryptMessage,
   unwrapConversationKey,
   wrapConversationKey,
@@ -35,6 +37,9 @@ export type DecryptedMessage = {
   body: string;
   createdAt: string;
   keyVersion: number;
+  kind: "text" | "image";
+  attachmentPath: string | null;
+  attachmentIv: string | null;
 };
 
 export type MessageReactions = Record<string, Record<string, string[]>>;
@@ -150,7 +155,7 @@ export async function listConversations(userId: string): Promise<ConversationSum
         .in("conversation_id", ids),
       supabase
         .from("messages")
-        .select("id, conversation_id, sender_id, ciphertext, iv, key_version, created_at")
+        .select("id, conversation_id, sender_id, ciphertext, iv, key_version, created_at, kind")
         .in("conversation_id", ids)
         .order("created_at", { ascending: false }),
       supabase
@@ -195,7 +200,10 @@ export async function listConversations(userId: string): Promise<ConversationSum
       try {
         const keys = await loadConversationKeys(conversation.id);
         const key = keys.get(latest.key_version);
-        preview = key ? await decryptMessage(key, latest.ciphertext, latest.iv) : "Encrypted message";
+        if (key) {
+          const caption = await decryptMessage(key, latest.ciphertext, latest.iv);
+          preview = latest.kind === "image" ? `Photo${caption ? ` · ${caption}` : ""}` : caption;
+        } else preview = "Encrypted message";
       } catch {
         preview = "Encrypted message";
       }
@@ -310,7 +318,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
   const keys = await loadConversationKeys(conversationId);
   const { data, error } = await supabase
     .from("messages")
-    .select("id, sender_id, ciphertext, iv, key_version, created_at")
+    .select("id, sender_id, ciphertext, iv, key_version, created_at, kind, attachment_path, attachment_iv")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
   if (error) throw new Error("Could not load messages.");
@@ -332,6 +340,9 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
       body,
       createdAt: row.created_at,
       keyVersion: row.key_version,
+      kind: row.kind === "image" ? "image" : "text",
+      attachmentPath: row.attachment_path,
+      attachmentIv: row.attachment_iv,
     });
   }
   return out;
@@ -339,7 +350,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
 
 export async function decryptSingleMessage(
   conversationId: string,
-  row: { id: string; sender_id: string; ciphertext: string; iv: string; key_version: number; created_at: string },
+  row: { id: string; sender_id: string; ciphertext: string; iv: string; key_version: number; created_at: string; kind?: string; attachment_path?: string | null; attachment_iv?: string | null },
 ): Promise<DecryptedMessage> {
   const keys = await loadConversationKeys(conversationId);
   const key = keys.get(row.key_version);
@@ -351,7 +362,7 @@ export async function decryptSingleMessage(
       /* keep fallback */
     }
   }
-  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version };
+  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: row.kind === "image" ? "image" : "text", attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null };
 }
 
 export async function sendMessage(conversationId: string, senderId: string, text: string) {
@@ -369,6 +380,67 @@ export async function sendMessage(conversationId: string, senderId: string, text
     key_version: version,
   });
   if (error) throw new Error("Message could not be sent.");
+}
+
+/** Resize and convert locally before encryption. No plaintext photo is uploaded. */
+async function preparePhoto(file: File): Promise<Blob> {
+  if (!file.type.startsWith("image/")) throw new Error("Choose an image file.");
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not process this photo.");
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+    if (!blob) throw new Error("Could not process this photo.");
+    return blob;
+  } finally {
+    bitmap.close();
+  }
+}
+
+export async function sendImageMessage(conversationId: string, senderId: string, file: File, caption = "") {
+  const keys = await loadConversationKeys(conversationId);
+  const version = Math.max(...keys.keys());
+  const key = keys.get(version);
+  if (!key) throw new Error("No usable conversation key.");
+  const photo = await preparePhoto(file);
+  const { ciphertext: photoBytes, iv: attachmentIv } = await encryptBytes(key, await photo.arrayBuffer());
+  const attachmentPath = `${conversationId}/${crypto.randomUUID()}.enc`;
+  const { error: uploadError } = await supabase.storage.from("message-attachments").upload(
+    attachmentPath,
+    new Blob([photoBytes], { type: "application/octet-stream" }),
+    { contentType: "application/octet-stream", upsert: false },
+  );
+  if (uploadError) throw new Error("Photo could not be uploaded.");
+  const { ciphertext, iv } = await encryptMessage(key, caption);
+  const { error } = await supabase.from("messages").insert({
+    conversation_id: conversationId,
+    sender_id: senderId,
+    ciphertext,
+    iv,
+    key_version: version,
+    kind: "image",
+    attachment_path: attachmentPath,
+    attachment_iv: attachmentIv,
+  });
+  if (error) throw new Error("Photo uploaded, but the message could not be sent. Please try again.");
+}
+
+export async function loadAttachment(conversationId: string, message: DecryptedMessage): Promise<string> {
+  if (!message.attachmentPath || !message.attachmentIv || !message.attachmentPath.startsWith(`${conversationId}/`)) {
+    throw new Error("Photo is unavailable.");
+  }
+  const keys = await loadConversationKeys(conversationId);
+  const key = keys.get(message.keyVersion);
+  if (!key) throw new Error("Photo cannot be decrypted with your keys.");
+  const { data, error } = await supabase.storage.from("message-attachments").download(message.attachmentPath);
+  if (error || !data) throw new Error("Photo could not be downloaded.");
+  const plain = await decryptBytes(key, await data.arrayBuffer(), message.attachmentIv);
+  return URL.createObjectURL(new Blob([plain], { type: "image/jpeg" }));
 }
 
 /** Each person has one encrypted reaction per message, under the current key version. */

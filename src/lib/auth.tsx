@@ -61,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
       if (!next) {
+        clearAttachmentCache();
         vault.wipeKeys();
         setUnlocked(false);
         setProfile(null);
@@ -206,6 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    clearAttachmentCache();
     vault.wipeKeys();
     setUnlocked(false);
     setProfile(null);
