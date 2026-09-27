@@ -2,6 +2,7 @@ import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { supabase } from "@/integrations/supabase/client";
+import { clearAttachmentCache } from "@/lib/attachment-cache";
 import { createIdentity, unlockIdentity } from "@/lib/crypto";
 import * as vault from "@/lib/key-vault";
 import {
@@ -60,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
       if (!next) {
+        clearAttachmentCache();
         vault.wipeKeys();
         setUnlocked(false);
         setProfile(null);
@@ -205,6 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    clearAttachmentCache();
     vault.wipeKeys();
     setUnlocked(false);
     setProfile(null);

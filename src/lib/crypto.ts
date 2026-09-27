@@ -182,6 +182,25 @@ export async function decryptMessage(
   return dec.decode(plain);
 }
 
+/** Binary AES-GCM encryption for photos, with a fresh random IV per call. */
+export async function encryptBytes(key: CryptoKey, bytes: ArrayBuffer | Uint8Array): Promise<{ ciphertext: ArrayBuffer; iv: string }> {
+  const iv = randomBytes(12);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: iv as unknown as BufferSource },
+    key,
+    bytes as BufferSource,
+  );
+  return { ciphertext, iv: toBase64(iv) };
+}
+
+export async function decryptBytes(key: CryptoKey, ciphertext: ArrayBuffer | Uint8Array, iv: string): Promise<ArrayBuffer> {
+  return crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: fromBase64(iv) as unknown as BufferSource },
+    key,
+    ciphertext as BufferSource,
+  );
+}
+
 /** SHA-256 fingerprint of a public key, grouped for human comparison. */
 export async function keyFingerprint(publicKeyB64: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", fromBase64(publicKeyB64) as unknown as BufferSource);

@@ -125,30 +125,39 @@ export type Database = {
       }
       messages: {
         Row: {
+          attachment_iv: string | null
+          attachment_path: string | null
           ciphertext: string
           conversation_id: string
           created_at: string
           id: string
           iv: string
           key_version: number
+          kind: string
           sender_id: string
         }
         Insert: {
+          attachment_iv?: string | null
+          attachment_path?: string | null
           ciphertext: string
           conversation_id: string
           created_at?: string
           id?: string
           iv: string
           key_version?: number
+          kind?: string
           sender_id: string
         }
         Update: {
+          attachment_iv?: string | null
+          attachment_path?: string | null
           ciphertext?: string
           conversation_id?: string
           created_at?: string
           id?: string
           iv?: string
           key_version?: number
+          kind?: string
           sender_id?: string
         }
         Relationships: [
