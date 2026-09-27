@@ -192,7 +192,7 @@ function ConversationScreen() {
   useEffect(() => {
     const thread = threadRef.current;
     if (thread) thread.scrollTop = thread.scrollHeight;
-  }, [messages.length]);
+  }, [messages.length, sendingPhoto]);
 
   async function handleSend(event: React.FormEvent) {
     event.preventDefault();
