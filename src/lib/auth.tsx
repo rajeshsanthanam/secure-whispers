@@ -2,6 +2,7 @@ import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { supabase } from "@/integrations/supabase/client";
+import { clearAttachmentCache } from "@/lib/attachment-cache";
 import { createIdentity, unlockIdentity } from "@/lib/crypto";
 import * as vault from "@/lib/key-vault";
 import {
