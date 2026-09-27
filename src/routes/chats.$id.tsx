@@ -34,6 +34,8 @@ export const Route = createFileRoute("/chats/$id")({
         content: "An end-to-end encrypted conversation, decrypted locally in your browser.",
       },
       { property: "og:title", content: "Conversation — Secure Messenger" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       {
         property: "og:description",
         content: "An end-to-end encrypted conversation, decrypted locally in your browser.",

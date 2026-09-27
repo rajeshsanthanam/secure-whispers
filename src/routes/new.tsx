@@ -21,6 +21,8 @@ export const Route = createFileRoute("/new")({
         content: "Find people by their exact username and start an encrypted chat or group.",
       },
       { property: "og:title", content: "Start a conversation — Secure Messenger" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       {
         property: "og:description",
         content: "Find people by their exact username and start an encrypted chat or group.",

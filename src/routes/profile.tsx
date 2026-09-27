@@ -16,6 +16,8 @@ export const Route = createFileRoute("/profile")({
         content: "Your display name, username, key fingerprint, and how this app's encryption works.",
       },
       { property: "og:title", content: "Your profile — Secure Messenger" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       {
         property: "og:description",
         content: "Your display name, username, key fingerprint, and how the encryption works.",

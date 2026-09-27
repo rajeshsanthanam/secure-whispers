@@ -13,6 +13,8 @@ export const Route = createFileRoute("/chats/")({
       { title: "Your chats — Secure Messenger" },
       { name: "description", content: "Your encrypted conversations, decrypted in this browser." },
       { property: "og:title", content: "Your chats — Secure Messenger" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       {
         property: "og:description",
         content: "Your encrypted conversations, decrypted in this browser.",
