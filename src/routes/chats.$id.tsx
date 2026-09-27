@@ -73,7 +73,7 @@ function ConversationScreen() {
   const [openPhoto, setOpenPhoto] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const messageIdsRef = useRef<string[]>([]);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const threadRef = useRef<HTMLDivElement | null>(null);
   const myId = profile?.id ?? null;
 
   useEffect(() => () => clearAttachmentCache(id), [id]);
@@ -190,7 +190,8 @@ function ConversationScreen() {
   }, [id]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const thread = threadRef.current;
+    if (thread) thread.scrollTop = thread.scrollHeight;
   }, [messages.length]);
 
   async function handleSend(event: React.FormEvent) {
@@ -346,7 +347,7 @@ function ConversationScreen() {
           </div>
         ) : null}
 
-        <div className="flex-1 min-h-0 space-y-4 overflow-y-auto px-4 py-6 sm:px-5">
+        <div ref={threadRef} className="flex-1 min-h-0 space-y-4 overflow-y-auto px-4 py-6 sm:px-5">
           <div className="flex justify-center">
             <span className="rounded-full px-3 py-1 text-[10px] font-medium tracking-[0.15em] text-mist/60 uppercase edge glass-plain">
               Encrypted end-to-end
@@ -446,7 +447,6 @@ function ConversationScreen() {
               </div>
             </div>
           ) : null}
-          <div ref={bottomRef} />
         </div>
 
         <form className="border-t px-4 py-3" onSubmit={handleSend}>
