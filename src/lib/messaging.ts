@@ -37,6 +37,8 @@ export type DecryptedMessage = {
   keyVersion: number;
 };
 
+export type MessageReactions = Record<string, Record<string, string[]>>;
+
 type KeyBundle = Record<string, WrappedKeyBlob>;
 
 /* ---------------- key bundles ---------------- */
@@ -367,6 +369,73 @@ export async function sendMessage(conversationId: string, senderId: string, text
     key_version: version,
   });
   if (error) throw new Error("Message could not be sent.");
+}
+
+/** Each person has one encrypted reaction per message, under the current key version. */
+export async function toggleReaction(
+  conversationId: string,
+  messageId: string,
+  userId: string,
+  emoji: string,
+): Promise<void> {
+  const { data: existing, error: lookupError } = await supabase
+    .from("message_reactions")
+    .select("ciphertext, iv, key_version")
+    .eq("message_id", messageId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (lookupError) throw new Error("Could not load your reaction.");
+
+  const keys = await loadConversationKeys(conversationId);
+  if (existing) {
+    const oldKey = keys.get(existing.key_version);
+    if (!oldKey) throw new Error("Cannot change a reaction encrypted with an unavailable key.");
+    let previous: string;
+    try {
+      previous = await decryptMessage(oldKey, existing.ciphertext, existing.iv);
+    } catch {
+      throw new Error("Could not decrypt your previous reaction.");
+    }
+    if (previous === emoji) {
+      const { error } = await supabase.from("message_reactions").delete().eq("message_id", messageId).eq("user_id", userId);
+      if (error) throw new Error("Could not remove reaction.");
+      return;
+    }
+  }
+
+  const version = Math.max(...keys.keys());
+  const key = keys.get(version);
+  if (!key) throw new Error("No usable conversation key.");
+  const encrypted = await encryptMessage(key, emoji);
+  const row = { message_id: messageId, user_id: userId, ...encrypted, key_version: version };
+  const { error } = existing
+    ? await supabase.from("message_reactions").update(row).eq("message_id", messageId).eq("user_id", userId)
+    : await supabase.from("message_reactions").insert(row);
+  if (error) throw new Error("Could not save reaction.");
+}
+
+/** Decrypt locally; old reactions remain readable with their original key version. */
+export async function loadReactions(conversationId: string, messageIds: string[]): Promise<MessageReactions> {
+  if (!messageIds.length) return {};
+  const keys = await loadConversationKeys(conversationId);
+  const { data, error } = await supabase
+    .from("message_reactions")
+    .select("message_id, user_id, ciphertext, iv, key_version")
+    .in("message_id", messageIds);
+  if (error) throw new Error("Could not load reactions.");
+  const grouped: MessageReactions = {};
+  for (const row of data ?? []) {
+    const key = keys.get(row.key_version);
+    if (!key) continue;
+    try {
+      const emoji = await decryptMessage(key, row.ciphertext, row.iv);
+      const byEmoji = (grouped[row.message_id] ??= {});
+      (byEmoji[emoji] ??= []).push(row.user_id);
+    } catch {
+      // A reaction without a usable key is not shown as plaintext.
+    }
+  }
+  return grouped;
 }
 
 /**
