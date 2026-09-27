@@ -1,12 +1,15 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ImagePlus, X } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
 import { Protected } from "@/components/Protected";
+import { PhotoAttachment } from "@/components/PhotoAttachment";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { clearAttachmentCache } from "@/lib/attachment-cache";
 import {
   decryptSingleMessage,
   getConversation,
@@ -16,6 +19,7 @@ import {
   markConversationRead,
   removeMemberAndRotate,
   sendMessage,
+  sendImageMessage,
   toggleReaction,
   type DecryptedMessage,
   type PublicProfile,
@@ -65,9 +69,14 @@ function ConversationScreen() {
   const [reactions, setReactions] = useState<MessageReactions>({});
   const [reactionPicker, setReactionPicker] = useState<string | null>(null);
   const [reactionPending, setReactionPending] = useState<string | null>(null);
+  const [sendingPhoto, setSendingPhoto] = useState<string | null>(null);
+  const [openPhoto, setOpenPhoto] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const messageIdsRef = useRef<string[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const myId = profile?.id ?? null;
+
+  useEffect(() => () => clearAttachmentCache(id), [id]);
 
   const refresh = useCallback(async () => {
     if (!profile) return;
@@ -135,6 +144,9 @@ function ConversationScreen() {
             iv: string;
             key_version: number;
             created_at: string;
+            kind: string;
+            attachment_path: string | null;
+            attachment_iv: string | null;
           };
           void decryptSingleMessage(id, row).then((message) => {
             setMessages((current) =>
@@ -191,6 +203,28 @@ function ConversationScreen() {
     } catch (sendError) {
       setError((sendError as Error).message);
       setDraft(text);
+    }
+  }
+
+  async function handlePhoto(file: File | undefined) {
+    if (!profile || !file || sendingPhoto) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Choose an image file.");
+      return;
+    }
+    const preview = URL.createObjectURL(file);
+    setSendingPhoto(preview);
+    setError(null);
+    const caption = draft.trim();
+    try {
+      await sendImageMessage(id, profile.id, file, caption);
+      setDraft("");
+    } catch (photoError) {
+      setError((photoError as Error).message);
+    } finally {
+      setSendingPhoto(null);
+      URL.revokeObjectURL(preview);
+      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -340,7 +374,12 @@ function ConversationScreen() {
                           : "rounded-tl-md text-mist edge glass-strong"
                       }`}
                     >
-                      {message.body}
+                      {message.kind === "image" ? (
+                        <div className="max-w-full space-y-2">
+                          <PhotoAttachment conversationId={id} message={message} onOpen={setOpenPhoto} />
+                          {message.body ? <p>{message.body}</p> : null}
+                        </div>
+                      ) : message.body}
                     </div>
                     <div className="shrink-0">
                       <Button
@@ -399,19 +438,26 @@ function ConversationScreen() {
               </div>
             );
           })}
+          {sendingPhoto ? (
+            <div className="flex justify-end" role="status" aria-label="Sending photo">
+              <div className="max-w-[78%] rounded-2xl p-2 bubble-mine">
+                <img src={sendingPhoto} alt="Photo being sent" className="max-h-48 max-w-full rounded-md object-contain opacity-70" />
+                <p className="mt-1 text-xs text-foreground/70">Sending photo…</p>
+              </div>
+            </div>
+          ) : null}
           <div ref={bottomRef} />
         </div>
 
         <form className="border-t px-4 py-3" onSubmit={handleSend}>
           <div className="flex items-center gap-2 rounded-2xl px-3 py-2 edge glass-plain">
-            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent-soft">
-              ✳
-            </span>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label="Choose a photo" onChange={(event) => void handlePhoto(event.target.files?.[0])} />
+            <Button type="button" variant="ghost" size="icon" title="Add photo" aria-label="Add photo" disabled={Boolean(sendingPhoto)} onClick={() => fileRef.current?.click()} className="size-8 shrink-0 text-accent-soft"><ImagePlus /></Button>
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder={`Message ${conversation?.title ?? ""}…`}
-              className="flex-1 bg-transparent py-1 text-sm text-foreground outline-none placeholder:text-mist/50"
+              className="min-w-0 flex-1 bg-transparent py-1 text-sm text-foreground outline-none placeholder:text-mist/50"
             />
             <button
               type="submit"
@@ -432,6 +478,12 @@ function ConversationScreen() {
         >
           Back to chats
         </button>
+      ) : null}
+      {openPhoto ? (
+        <div role="dialog" aria-modal="true" aria-label="Photo viewer" className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4" onClick={() => setOpenPhoto(null)} onKeyDown={(event) => { if (event.key === "Escape") setOpenPhoto(null); }}>
+          <Button type="button" variant="ghost" size="icon" aria-label="Close photo" className="absolute right-4 top-4 text-foreground" onClick={() => setOpenPhoto(null)}><X /></Button>
+          <img src={openPhoto} alt="Shared photo enlarged" className="max-h-full max-w-full object-contain" onClick={(event) => event.stopPropagation()} />
+        </div>
       ) : null}
     </AppShell>
   );

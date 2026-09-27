@@ -10,3 +10,4 @@
 <!-- LOVABLE:END -->
 
 - Keep reactions as encrypted per-user rows keyed by message and encryption version; decrypt with conversation keys in the browser so old reactions survive key rotation.
+- Store photo attachments as AES-GCM ciphertext in private, conversation-scoped storage paths and decrypt with the message's key version in the browser; this keeps old photos readable after key rotation.
