@@ -275,7 +275,7 @@ function ConversationScreen() {
 
   const others = conversation?.others ?? [];
   const messageById = new Map(messages.map((message) => [message.id, message]));
-  const replyingTo = replyingToId ? messageById.get(replyingToId) : null;
+  const replyingTo = replyingToId ? messageById.get(replyingToId) : undefined;
 
   function replySummary(message: DecryptedMessage | undefined) {
     if (!message) return { sender: "Replying to a message", preview: "" };
