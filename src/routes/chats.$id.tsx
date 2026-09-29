@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ImagePlus, Reply, X } from "lucide-react";
+import { ImagePlus, Reply, Trash2, X } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth";
 import { clearAttachmentCache } from "@/lib/attachment-cache";
 import {
   decryptSingleMessage,
+  deleteMessage,
   getConversation,
   loadReactions,
   listReadMarkers,
