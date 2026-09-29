@@ -40,6 +40,7 @@ export type DecryptedMessage = {
   kind: "text" | "image";
   attachmentPath: string | null;
   attachmentIv: string | null;
+  replyToMessageId: string | null;
 };
 
 export type MessageReactions = Record<string, Record<string, string[]>>;
@@ -318,7 +319,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
   const keys = await loadConversationKeys(conversationId);
   const { data, error } = await supabase
     .from("messages")
-    .select("id, sender_id, ciphertext, iv, key_version, created_at, kind, attachment_path, attachment_iv")
+    .select("id, sender_id, ciphertext, iv, key_version, created_at, kind, attachment_path, attachment_iv, reply_to_message_id")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
   if (error) throw new Error("Could not load messages.");
@@ -343,6 +344,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
       kind: row.kind === "image" ? "image" : "text",
       attachmentPath: row.attachment_path,
       attachmentIv: row.attachment_iv,
+      replyToMessageId: row.reply_to_message_id,
     });
   }
   return out;
@@ -350,7 +352,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
 
 export async function decryptSingleMessage(
   conversationId: string,
-  row: { id: string; sender_id: string; ciphertext: string; iv: string; key_version: number; created_at: string; kind?: string; attachment_path?: string | null; attachment_iv?: string | null },
+  row: { id: string; sender_id: string; ciphertext: string; iv: string; key_version: number; created_at: string; kind?: string; attachment_path?: string | null; attachment_iv?: string | null; reply_to_message_id?: string | null },
 ): Promise<DecryptedMessage> {
   const keys = await loadConversationKeys(conversationId);
   const key = keys.get(row.key_version);
@@ -362,10 +364,10 @@ export async function decryptSingleMessage(
       /* keep fallback */
     }
   }
-  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: row.kind === "image" ? "image" : "text", attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null };
+  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: row.kind === "image" ? "image" : "text", attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null, replyToMessageId: row.reply_to_message_id ?? null };
 }
 
-export async function sendMessage(conversationId: string, senderId: string, text: string) {
+export async function sendMessage(conversationId: string, senderId: string, text: string, replyToMessageId?: string | null) {
   const keys = await loadConversationKeys(conversationId);
   const version = Math.max(...keys.keys());
   const key = keys.get(version);
@@ -378,6 +380,7 @@ export async function sendMessage(conversationId: string, senderId: string, text
     ciphertext,
     iv,
     key_version: version,
+    reply_to_message_id: replyToMessageId ?? null,
   });
   if (error) throw new Error("Message could not be sent.");
 }
@@ -402,7 +405,7 @@ async function preparePhoto(file: File): Promise<Blob> {
   }
 }
 
-export async function sendImageMessage(conversationId: string, senderId: string, file: File, caption = "") {
+export async function sendImageMessage(conversationId: string, senderId: string, file: File, caption = "", replyToMessageId?: string | null) {
   const keys = await loadConversationKeys(conversationId);
   const version = Math.max(...keys.keys());
   const key = keys.get(version);
@@ -426,6 +429,7 @@ export async function sendImageMessage(conversationId: string, senderId: string,
     kind: "image",
     attachment_path: attachmentPath,
     attachment_iv: attachmentIv,
+    reply_to_message_id: replyToMessageId ?? null,
   });
   if (error) throw new Error("Photo uploaded, but the message could not be sent. Please try again.");
 }
