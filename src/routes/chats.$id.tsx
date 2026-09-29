@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ImagePlus, X } from "lucide-react";
+import { ImagePlus, Reply, X } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
@@ -71,12 +71,17 @@ function ConversationScreen() {
   const [reactionPending, setReactionPending] = useState<string | null>(null);
   const [sendingPhoto, setSendingPhoto] = useState<string | null>(null);
   const [openPhoto, setOpenPhoto] = useState<string | null>(null);
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const messageIdsRef = useRef<string[]>([]);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const myId = profile?.id ?? null;
 
   useEffect(() => () => clearAttachmentCache(id), [id]);
+  useEffect(() => () => { if (highlightTimer.current) clearTimeout(highlightTimer.current); }, []);
+  useEffect(() => { setReplyingToId(null); setHighlightedId(null); }, [id]);
 
   const refresh = useCallback(async () => {
     if (!profile) return;
@@ -147,6 +152,7 @@ function ConversationScreen() {
             kind: string;
             attachment_path: string | null;
             attachment_iv: string | null;
+            reply_to_message_id: string | null;
           };
           void decryptSingleMessage(id, row).then((message) => {
             setMessages((current) =>
@@ -198,9 +204,11 @@ function ConversationScreen() {
     event.preventDefault();
     if (!profile || !draft.trim()) return;
     const text = draft.trim();
+    const replyId = replyingToId;
     setDraft("");
     try {
-      await sendMessage(id, profile.id, text);
+      await sendMessage(id, profile.id, text, replyId);
+      setReplyingToId((current) => current === replyId ? null : current);
     } catch (sendError) {
       setError((sendError as Error).message);
       setDraft(text);
@@ -217,9 +225,11 @@ function ConversationScreen() {
     setSendingPhoto(preview);
     setError(null);
     const caption = draft.trim();
+    const replyId = replyingToId;
     try {
-      await sendImageMessage(id, profile.id, file, caption);
+      await sendImageMessage(id, profile.id, file, caption, replyId);
       setDraft("");
+      setReplyingToId((current) => current === replyId ? null : current);
     } catch (photoError) {
       setError((photoError as Error).message);
     } finally {
@@ -264,6 +274,27 @@ function ConversationScreen() {
   }
 
   const others = conversation?.others ?? [];
+  const messageById = new Map(messages.map((message) => [message.id, message]));
+  const replyingTo = replyingToId ? messageById.get(replyingToId) : null;
+
+  function replySummary(message: DecryptedMessage | undefined) {
+    if (!message) return { sender: "Replying to a message", preview: "" };
+    const sender = message.senderId === profile?.id
+      ? "You"
+      : conversation?.members.find((person) => person.id === message.senderId)?.display_name
+        || conversation?.members.find((person) => person.id === message.senderId)?.username
+        || "Unknown";
+    return { sender, preview: message.kind === "image" ? "Photo" : message.body };
+  }
+
+  function jumpToMessage(messageId: string) {
+    const target = document.getElementById(`message-${messageId}`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedId(messageId);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightedId(null), 1800);
+  }
 
   // "Seen" applies to my newest message, once every other member's read
   // position has reached it. Their read times are never shown.
@@ -359,8 +390,9 @@ function ConversationScreen() {
           {messages.map((message) => {
             const mine = message.senderId === profile?.id;
             const sender = others.find((person) => person.id === message.senderId);
+            const quoted = message.replyToMessageId ? replySummary(messageById.get(message.replyToMessageId)) : null;
             return (
-              <div key={message.id} className={`group flex ${mine ? "justify-end" : "justify-start"}`}>
+              <div id={`message-${message.id}`} key={message.id} className={`group flex rounded-md transition-colors ${mine ? "justify-end" : "justify-start"} ${highlightedId === message.id ? "bg-accent/15" : ""}`}>
                 <div className="max-w-[78%]">
                   {conversation?.isGroup && !mine ? (
                     <p className="mb-1 px-1 text-[10px] text-mist/60">
@@ -375,6 +407,18 @@ function ConversationScreen() {
                           : "rounded-tl-md text-mist edge glass-strong"
                       }`}
                     >
+                      {quoted ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => { if (message.replyToMessageId) jumpToMessage(message.replyToMessageId); }}
+                          className="mb-2 flex h-auto max-w-full flex-col items-start gap-0.5 border-l-2 border-accent/60 bg-background/20 px-2 py-1 text-left text-inherit hover:bg-background/30 hover:text-inherit"
+                          title={messageById.has(message.replyToMessageId ?? "") ? "Jump to original message" : "Original message not loaded"}
+                        >
+                          <span className="max-w-full truncate text-xs font-semibold text-accent-soft">{quoted.sender}</span>
+                          {quoted.preview ? <span className="max-w-full truncate text-xs font-normal text-mist">{quoted.preview}</span> : null}
+                        </Button>
+                      ) : null}
                       {message.kind === "image" ? (
                         <div className="max-w-full space-y-2">
                           <PhotoAttachment conversationId={id} message={message} onOpen={setOpenPhoto} />
@@ -382,7 +426,18 @@ function ConversationScreen() {
                         </div>
                       ) : message.body}
                     </div>
-                    <div className="shrink-0">
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Reply to message"
+                        title="Reply to message"
+                        onClick={() => { setReplyingToId(message.id); setReactionPicker(null); }}
+                        className="size-7 text-mist/70 opacity-60 hover:opacity-100 hover:text-accent-soft focus-visible:opacity-100"
+                      >
+                        <Reply />
+                      </Button>
                       <Button
                         type="button"
                         variant="ghost"
@@ -450,6 +505,15 @@ function ConversationScreen() {
         </div>
 
         <form className="border-t px-4 py-3" onSubmit={handleSend}>
+          {replyingToId ? (
+            <div className="mb-2 flex items-center gap-2 border-l-2 border-accent/60 bg-background/20 px-2 py-1.5" role="status">
+              <div className="min-w-0 flex-1 text-xs">
+                <p className="truncate font-semibold text-accent-soft">{replySummary(replyingTo).sender}</p>
+                {replySummary(replyingTo).preview ? <p className="truncate text-mist">{replySummary(replyingTo).preview}</p> : null}
+              </div>
+              <Button type="button" variant="ghost" size="icon" aria-label="Cancel reply" title="Cancel reply" className="size-7 shrink-0 text-mist" onClick={() => setReplyingToId(null)}><X /></Button>
+            </div>
+          ) : null}
           <div className="flex items-center gap-2 rounded-2xl px-3 py-2 edge glass-plain">
             <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label="Choose a photo" onChange={(event) => void handlePhoto(event.target.files?.[0])} />
             <Button type="button" variant="ghost" size="icon" title="Add photo" aria-label="Add photo" disabled={Boolean(sendingPhoto)} onClick={() => fileRef.current?.click()} className="size-8 shrink-0 text-accent-soft"><ImagePlus /></Button>
