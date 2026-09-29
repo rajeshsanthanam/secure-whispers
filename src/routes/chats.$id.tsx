@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ImagePlus, Reply, X } from "lucide-react";
+import { ImagePlus, Reply, Trash2, X } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
@@ -9,9 +9,10 @@ import { PhotoAttachment } from "@/components/PhotoAttachment";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { clearAttachmentCache } from "@/lib/attachment-cache";
+import { clearAttachmentCache, clearCachedAttachment } from "@/lib/attachment-cache";
 import {
   decryptSingleMessage,
+  deleteMessage,
   getConversation,
   loadReactions,
   listReadMarkers,
@@ -69,6 +70,7 @@ function ConversationScreen() {
   const [reactions, setReactions] = useState<MessageReactions>({});
   const [reactionPicker, setReactionPicker] = useState<string | null>(null);
   const [reactionPending, setReactionPending] = useState<string | null>(null);
+  const [deletingMessage, setDeletingMessage] = useState<string | null>(null);
   const [sendingPhoto, setSendingPhoto] = useState<string | null>(null);
   const [openPhoto, setOpenPhoto] = useState<string | null>(null);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
@@ -140,8 +142,9 @@ function ConversationScreen() {
       .channel(`messages-${id}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${id}` },
+         { event: "*", schema: "public", table: "messages", filter: `conversation_id=eq.${id}` },
         (payload) => {
+           if (payload.eventType !== "INSERT" && payload.eventType !== "UPDATE") return;
           const row = payload.new as {
             id: string;
             sender_id: string;
@@ -153,14 +156,23 @@ function ConversationScreen() {
             attachment_path: string | null;
             attachment_iv: string | null;
             reply_to_message_id: string | null;
+             deleted_at: string | null;
           };
           void decryptSingleMessage(id, row).then((message) => {
-            setMessages((current) =>
-              current.some((existing) => existing.id === message.id)
-                ? current
-                : [...current, message],
-            );
-            if (myId) void markConversationRead(id, myId, message.id);
+             if (message.deletedAt) {
+               clearCachedAttachment(message.id);
+               setOpenPhoto(null);
+               setReactionPicker((current) => current === message.id ? null : current);
+               setReactions((current) => { const next = { ...current }; delete next[message.id]; return next; });
+             }
+             setMessages((current) => {
+               const index = current.findIndex((existing) => existing.id === message.id);
+               if (index < 0) return payload.eventType === "INSERT" ? [...current, message] : current;
+               const next = [...current];
+               next[index] = message;
+               return next;
+             });
+             if (payload.eventType === "INSERT" && myId) void markConversationRead(id, myId, message.id);
           });
         },
       )
@@ -273,12 +285,33 @@ function ConversationScreen() {
     }
   }
 
+  async function handleDelete(messageId: string) {
+    if (deletingMessage || !window.confirm("Delete this message for everyone? This cannot be undone.")) return;
+    setDeletingMessage(messageId);
+    setError(null);
+    try {
+      await deleteMessage(messageId, id);
+      clearCachedAttachment(messageId);
+      setOpenPhoto(null);
+      setReactionPicker((current) => current === messageId ? null : current);
+      setReactions((current) => { const next = { ...current }; delete next[messageId]; return next; });
+      setMessages((current) => current.map((message) => message.id === messageId
+        ? { ...message, deletedAt: new Date().toISOString(), body: "", kind: "text", attachmentPath: null, attachmentIv: null }
+        : message));
+    } catch (deleteError) {
+      setError((deleteError as Error).message);
+    } finally {
+      setDeletingMessage(null);
+    }
+  }
+
   const others = conversation?.others ?? [];
   const messageById = new Map(messages.map((message) => [message.id, message]));
   const replyingTo = replyingToId ? messageById.get(replyingToId) : undefined;
 
   function replySummary(message: DecryptedMessage | undefined) {
     if (!message) return { sender: "Replying to a message", preview: "" };
+    if (message.deletedAt) return { sender: "Replying to a deleted message", preview: "" };
     const sender = message.senderId === profile?.id
       ? "You"
       : conversation?.members.find((person) => person.id === message.senderId)?.display_name
@@ -407,7 +440,7 @@ function ConversationScreen() {
                           : "rounded-tl-md text-mist edge glass-strong"
                       }`}
                     >
-                      {quoted ? (
+                       {!message.deletedAt && quoted ? (
                         <Button
                           type="button"
                           variant="ghost"
@@ -419,14 +452,16 @@ function ConversationScreen() {
                           {quoted.preview ? <span className="max-w-full truncate text-xs font-normal text-mist">{quoted.preview}</span> : null}
                         </Button>
                       ) : null}
-                      {message.kind === "image" ? (
+                       {message.deletedAt ? (
+                         <span className="italic text-mist/60">This message was deleted</span>
+                       ) : message.kind === "image" ? (
                         <div className="max-w-full space-y-2">
                           <PhotoAttachment conversationId={id} message={message} onOpen={setOpenPhoto} />
                           {message.body ? <p>{message.body}</p> : null}
                         </div>
                       ) : message.body}
                     </div>
-                    <div className="flex shrink-0 items-center gap-0.5">
+                     {!message.deletedAt ? <div className="flex shrink-0 items-center gap-0.5">
                       <Button
                         type="button"
                         variant="ghost"
@@ -451,16 +486,19 @@ function ConversationScreen() {
                       >
                         <span aria-hidden="true">☺</span>
                       </Button>
-                    </div>
+                       {mine ? (
+                         <Button type="button" variant="ghost" size="icon" aria-label="Delete message" title="Delete message" disabled={deletingMessage === message.id} onClick={() => void handleDelete(message.id)} className="size-7 text-mist/70 opacity-60 hover:opacity-100 hover:text-destructive focus-visible:opacity-100"><Trash2 /></Button>
+                       ) : null}
+                     </div> : null}
                   </div>
-                  {reactionPicker === message.id ? (
+                   {!message.deletedAt && reactionPicker === message.id ? (
                     <div className={`mt-1 flex max-w-full flex-wrap gap-0.5 rounded-md p-1.5 edge glass-strong ${mine ? "justify-end" : "justify-start"}`} role="group" aria-label="Choose a reaction">
                       {REACTION_EMOJI.map((emoji) => (
                         <Button key={emoji} type="button" variant="ghost" size="icon" className="size-8 text-lg" aria-label={`React ${emoji}`} onClick={() => void handleReaction(message.id, emoji)}>{emoji}</Button>
                       ))}
                     </div>
                   ) : null}
-                  {Object.entries(reactions[message.id] ?? {}).length ? (
+                   {!message.deletedAt && Object.entries(reactions[message.id] ?? {}).length ? (
                     <div className={`mt-1 flex flex-wrap gap-1 ${mine ? "justify-end" : "justify-start"}`}>
                       {Object.entries(reactions[message.id] ?? {}).map(([emoji, users]) => (
                         <Button

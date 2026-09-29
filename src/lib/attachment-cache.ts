@@ -11,6 +11,13 @@ export function cacheAttachment(conversationId: string, messageId: string, url: 
   images.set(messageId, { conversationId, url });
 }
 
+export function clearCachedAttachment(messageId: string) {
+  const image = images.get(messageId);
+  if (!image) return;
+  URL.revokeObjectURL(image.url);
+  images.delete(messageId);
+}
+
 export function clearAttachmentCache(conversationId?: string) {
   for (const [messageId, image] of images) {
     if (conversationId && image.conversationId !== conversationId) continue;

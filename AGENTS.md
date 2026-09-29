@@ -12,3 +12,4 @@
 - Keep reactions as encrypted per-user rows keyed by message and encryption version; decrypt with conversation keys in the browser so old reactions survive key rotation.
 - Store photo attachments as AES-GCM ciphertext in private, conversation-scoped storage paths and decrypt with the message's key version in the browser; this keeps old photos readable after key rotation.
 - Keep replies as same-conversation message references and display quoted content from already-decrypted in-memory messages; this avoids duplicate plaintext storage or a second lookup.
+- Tombstone deleted messages in place, clearing encrypted body and photo references after private file cleanup; this preserves reply and read-marker references.

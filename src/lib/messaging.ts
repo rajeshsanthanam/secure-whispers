@@ -10,6 +10,7 @@ import {
   type WrappedKeyBlob,
 } from "@/lib/crypto";
 import * as vault from "@/lib/key-vault";
+import { clearCachedAttachment } from "@/lib/attachment-cache";
 import { normalizeUsername } from "@/lib/password-policy";
 
 export type PublicProfile = {
@@ -41,6 +42,7 @@ export type DecryptedMessage = {
   attachmentPath: string | null;
   attachmentIv: string | null;
   replyToMessageId: string | null;
+  deletedAt: string | null;
 };
 
 export type MessageReactions = Record<string, Record<string, string[]>>;
@@ -156,7 +158,7 @@ export async function listConversations(userId: string): Promise<ConversationSum
         .in("conversation_id", ids),
       supabase
         .from("messages")
-        .select("id, conversation_id, sender_id, ciphertext, iv, key_version, created_at, kind")
+         .select("id, conversation_id, sender_id, ciphertext, iv, key_version, created_at, kind, deleted_at")
         .in("conversation_id", ids)
         .order("created_at", { ascending: false }),
       supabase
@@ -197,7 +199,9 @@ export async function listConversations(userId: string): Promise<ConversationSum
 
     const latest = latestByConversation.get(conversation.id);
     let preview: string | null = null;
-    if (latest) {
+     if (latest?.deleted_at) {
+       preview = "This message was deleted";
+     } else if (latest) {
       try {
         const keys = await loadConversationKeys(conversation.id);
         const key = keys.get(latest.key_version);
@@ -319,7 +323,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
   const keys = await loadConversationKeys(conversationId);
   const { data, error } = await supabase
     .from("messages")
-    .select("id, sender_id, ciphertext, iv, key_version, created_at, kind, attachment_path, attachment_iv, reply_to_message_id")
+     .select("id, sender_id, ciphertext, iv, key_version, created_at, kind, attachment_path, attachment_iv, reply_to_message_id, deleted_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
   if (error) throw new Error("Could not load messages.");
@@ -328,7 +332,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
   for (const row of data ?? []) {
     const key = keys.get(row.key_version);
     let body = "Cannot be decrypted with your keys.";
-    if (key) {
+     if (key && !row.deleted_at) {
       try {
         body = await decryptMessage(key, row.ciphertext, row.iv);
       } catch {
@@ -345,6 +349,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
       attachmentPath: row.attachment_path,
       attachmentIv: row.attachment_iv,
       replyToMessageId: row.reply_to_message_id,
+       deletedAt: row.deleted_at,
     });
   }
   return out;
@@ -352,19 +357,53 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
 
 export async function decryptSingleMessage(
   conversationId: string,
-  row: { id: string; sender_id: string; ciphertext: string; iv: string; key_version: number; created_at: string; kind?: string; attachment_path?: string | null; attachment_iv?: string | null; reply_to_message_id?: string | null },
+  row: { id: string; sender_id: string; ciphertext: string; iv: string; key_version: number; created_at: string; kind?: string; attachment_path?: string | null; attachment_iv?: string | null; reply_to_message_id?: string | null; deleted_at?: string | null },
 ): Promise<DecryptedMessage> {
   const keys = await loadConversationKeys(conversationId);
   const key = keys.get(row.key_version);
   let body = "Cannot be decrypted with your keys.";
-  if (key) {
+  if (key && !row.deleted_at) {
     try {
       body = await decryptMessage(key, row.ciphertext, row.iv);
     } catch {
       /* keep fallback */
     }
   }
-  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: row.kind === "image" ? "image" : "text", attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null, replyToMessageId: row.reply_to_message_id ?? null };
+  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: row.kind === "image" ? "image" : "text", attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null, replyToMessageId: row.reply_to_message_id ?? null, deletedAt: row.deleted_at ?? null };
+}
+
+/** Remove the encrypted photo first; preserve the message row for replies and read positions. */
+export async function deleteMessage(messageId: string, conversationId: string): Promise<void> {
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth.user) throw new Error("Sign in to delete your message.");
+  const { data: message, error: lookupError } = await supabase
+    .from("messages")
+    .select("sender_id, kind, attachment_path, deleted_at")
+    .eq("id", messageId)
+    .eq("conversation_id", conversationId)
+    .maybeSingle();
+  if (lookupError || !message) throw new Error("Message could not be found.");
+  if (message.sender_id !== auth.user.id) throw new Error("You can only delete your own messages.");
+  if (message.deleted_at) return;
+
+  if (message.kind === "image" && message.attachment_path) {
+    if (!message.attachment_path.startsWith(`${conversationId}/`)) throw new Error("Invalid photo path.");
+    const { error: storageError } = await supabase.storage
+      .from("message-attachments")
+      .remove([message.attachment_path]);
+    if (storageError) throw new Error("Photo could not be removed; the message was not deleted.");
+  }
+
+  const { data: updated, error } = await supabase.from("messages").update({
+    deleted_at: new Date().toISOString(),
+    ciphertext: "",
+    iv: "",
+    attachment_path: null,
+    attachment_iv: null,
+    kind: "text",
+  }).eq("id", messageId).eq("conversation_id", conversationId).eq("sender_id", auth.user.id).is("deleted_at", null).select("id");
+  if (error || !updated?.length) throw new Error("Message could not be deleted. Please try again.");
+  clearCachedAttachment(messageId);
 }
 
 export async function sendMessage(conversationId: string, senderId: string, text: string, replyToMessageId?: string | null) {
@@ -454,6 +493,9 @@ export async function toggleReaction(
   userId: string,
   emoji: string,
 ): Promise<void> {
+  const { data: target, error: targetError } = await supabase.from("messages")
+    .select("deleted_at").eq("id", messageId).eq("conversation_id", conversationId).maybeSingle();
+  if (targetError || !target || target.deleted_at) throw new Error("Cannot react to a deleted message.");
   const { data: existing, error: lookupError } = await supabase
     .from("message_reactions")
     .select("ciphertext, iv, key_version")
