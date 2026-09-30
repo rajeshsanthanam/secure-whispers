@@ -351,6 +351,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
       attachmentIv: row.attachment_iv,
       replyToMessageId: row.reply_to_message_id,
        deletedAt: row.deleted_at,
+       editedAt: row.edited_at,
     });
   }
   return out;
