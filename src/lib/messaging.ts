@@ -43,6 +43,7 @@ export type DecryptedMessage = {
   attachmentIv: string | null;
   replyToMessageId: string | null;
   deletedAt: string | null;
+  editedAt: string | null;
 };
 
 export type MessageReactions = Record<string, Record<string, string[]>>;
@@ -323,7 +324,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
   const keys = await loadConversationKeys(conversationId);
   const { data, error } = await supabase
     .from("messages")
-     .select("id, sender_id, ciphertext, iv, key_version, created_at, kind, attachment_path, attachment_iv, reply_to_message_id, deleted_at")
+     .select("id, sender_id, ciphertext, iv, key_version, created_at, kind, attachment_path, attachment_iv, reply_to_message_id, deleted_at, edited_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
   if (error) throw new Error("Could not load messages.");
@@ -357,7 +358,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
 
 export async function decryptSingleMessage(
   conversationId: string,
-  row: { id: string; sender_id: string; ciphertext: string; iv: string; key_version: number; created_at: string; kind?: string; attachment_path?: string | null; attachment_iv?: string | null; reply_to_message_id?: string | null; deleted_at?: string | null },
+  row: { id: string; sender_id: string; ciphertext: string; iv: string; key_version: number; created_at: string; kind?: string; attachment_path?: string | null; attachment_iv?: string | null; reply_to_message_id?: string | null; deleted_at?: string | null; edited_at?: string | null },
 ): Promise<DecryptedMessage> {
   const keys = await loadConversationKeys(conversationId);
   const key = keys.get(row.key_version);
@@ -369,7 +370,7 @@ export async function decryptSingleMessage(
       /* keep fallback */
     }
   }
-  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: row.kind === "image" ? "image" : "text", attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null, replyToMessageId: row.reply_to_message_id ?? null, deletedAt: row.deleted_at ?? null };
+  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: row.kind === "image" ? "image" : "text", attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null, replyToMessageId: row.reply_to_message_id ?? null, deletedAt: row.deleted_at ?? null, editedAt: row.edited_at ?? null };
 }
 
 /** Remove the encrypted photo first; preserve the message row for replies and read positions. */
@@ -404,6 +405,45 @@ export async function deleteMessage(messageId: string, conversationId: string): 
   }).eq("id", messageId).eq("conversation_id", conversationId).eq("sender_id", auth.user.id).is("deleted_at", null).select("id");
   if (error || !updated?.length) throw new Error("Message could not be deleted. Please try again.");
   clearCachedAttachment(messageId);
+}
+
+/** Re-encrypt an own, non-deleted text message with the active conversation key. */
+export async function editMessage(
+  messageId: string,
+  conversationId: string,
+  conversationKeys: Map<number, CryptoKey> | null,
+  newText: string,
+): Promise<{ editedAt: string; keyVersion: number }> {
+  const text = newText.trim();
+  if (!text) throw new Error("A message can't be empty.");
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth.user) throw new Error("Sign in to edit your message.");
+  const { data: message, error: lookupError } = await supabase
+    .from("messages")
+    .select("sender_id, kind, deleted_at")
+    .eq("id", messageId)
+    .eq("conversation_id", conversationId)
+    .maybeSingle();
+  if (lookupError || !message) throw new Error("Message could not be found.");
+  if (message.sender_id !== auth.user.id) throw new Error("You can only edit your own messages.");
+  if (message.deleted_at) throw new Error("Deleted messages can't be edited.");
+  if (message.kind !== "text") throw new Error("Only text messages can be edited.");
+
+  const keys = conversationKeys ?? await loadConversationKeys(conversationId);
+  const version = Math.max(...keys.keys());
+  const key = keys.get(version);
+  if (!key) throw new Error("No usable conversation key.");
+  const { ciphertext, iv } = await encryptMessage(key, text);
+  const editedAt = new Date().toISOString();
+  const { data: updated, error } = await supabase.from("messages").update({
+    ciphertext,
+    iv,
+    key_version: version,
+    edited_at: editedAt,
+  }).eq("id", messageId).eq("conversation_id", conversationId).eq("sender_id", auth.user.id)
+    .eq("kind", "text").is("deleted_at", null).select("id");
+  if (error || !updated?.length) throw new Error("Message could not be edited. Please try again.");
+  return { editedAt, keyVersion: version };
 }
 
 export async function sendMessage(conversationId: string, senderId: string, text: string, replyToMessageId?: string | null) {
