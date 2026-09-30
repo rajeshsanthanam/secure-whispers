@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ImagePlus, Reply, Trash2, X } from "lucide-react";
+import { ImagePlus, Pencil, Reply, Trash2, X } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
@@ -13,6 +13,7 @@ import { clearAttachmentCache, clearCachedAttachment } from "@/lib/attachment-ca
 import {
   decryptSingleMessage,
   deleteMessage,
+  editMessage,
   getConversation,
   loadReactions,
   listReadMarkers,
@@ -74,6 +75,7 @@ function ConversationScreen() {
   const [sendingPhoto, setSendingPhoto] = useState<string | null>(null);
   const [openPhoto, setOpenPhoto] = useState<string | null>(null);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -157,6 +159,7 @@ function ConversationScreen() {
             attachment_iv: string | null;
             reply_to_message_id: string | null;
              deleted_at: string | null;
+            edited_at: string | null;
           };
           void decryptSingleMessage(id, row).then((message) => {
              if (message.deletedAt) {
@@ -216,6 +219,22 @@ function ConversationScreen() {
     event.preventDefault();
     if (!profile || !draft.trim()) return;
     const text = draft.trim();
+    if (editingId) {
+      const editId = editingId;
+      const previous = messages.find((m) => m.id === editId);
+      setDraft("");
+      setEditingId(null);
+      if (previous && previous.body === text) return;
+      try {
+        const result = await editMessage(editId, id, null, text);
+        setMessages((current) => current.map((m) => m.id === editId ? { ...m, body: text, editedAt: result.editedAt, keyVersion: result.keyVersion } : m));
+      } catch (editError) {
+        setError((editError as Error).message);
+        setEditingId(editId);
+        setDraft(text);
+      }
+      return;
+    }
     const replyId = replyingToId;
     setDraft("");
     try {
@@ -289,6 +308,7 @@ function ConversationScreen() {
     if (deletingMessage || !window.confirm("Delete this message for everyone? This cannot be undone.")) return;
     setDeletingMessage(messageId);
     setError(null);
+    if (editingId === messageId) { setEditingId(null); setDraft(""); }
     try {
       await deleteMessage(messageId, id);
       clearCachedAttachment(messageId);
@@ -486,6 +506,9 @@ function ConversationScreen() {
                       >
                         <span aria-hidden="true">☺</span>
                       </Button>
+                       {mine && message.kind === "text" ? (
+                         <Button type="button" variant="ghost" size="icon" aria-label="Edit message" title="Edit message" onClick={() => { setEditingId(message.id); setReplyingToId(null); setReactionPicker(null); setDraft(message.body); }} className="size-7 text-mist/70 opacity-60 hover:opacity-100 hover:text-accent-soft focus-visible:opacity-100"><Pencil /></Button>
+                       ) : null}
                        {mine ? (
                          <Button type="button" variant="ghost" size="icon" aria-label="Delete message" title="Delete message" disabled={deletingMessage === message.id} onClick={() => void handleDelete(message.id)} className="size-7 text-mist/70 opacity-60 hover:opacity-100 hover:text-destructive focus-visible:opacity-100"><Trash2 /></Button>
                        ) : null}
@@ -524,6 +547,7 @@ function ConversationScreen() {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
+                    {message.editedAt && !message.deletedAt ? <span className="ml-1">(edited)</span> : null}
                     {mine && seenByAll && message.id === myLastMessageId ? (
                       <span className="ml-1.5 text-accent-soft">· Seen</span>
                     ) : null}
@@ -543,7 +567,13 @@ function ConversationScreen() {
         </div>
 
         <form className="border-t px-4 py-3" onSubmit={handleSend}>
-          {replyingToId ? (
+          {editingId ? (
+            <div className="mb-2 flex items-center gap-2 border-l-2 border-accent/60 bg-background/20 px-2 py-1.5 text-xs" role="status">
+              <p className="flex-1 font-semibold text-accent-soft">Editing message</p>
+              <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-mist" onClick={() => { setEditingId(null); setDraft(""); }}>Cancel</Button>
+            </div>
+          ) : null}
+          {replyingToId && !editingId ? (
             <div className="mb-2 flex items-center gap-2 border-l-2 border-accent/60 bg-background/20 px-2 py-1.5" role="status">
               <div className="min-w-0 flex-1 text-xs">
                 <p className="truncate font-semibold text-accent-soft">{replySummary(replyingTo).sender}</p>
@@ -554,7 +584,7 @@ function ConversationScreen() {
           ) : null}
           <div className="flex items-center gap-2 rounded-2xl px-3 py-2 edge glass-plain">
             <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label="Choose a photo" onChange={(event) => void handlePhoto(event.target.files?.[0])} />
-            <Button type="button" variant="ghost" size="icon" title="Add photo" aria-label="Add photo" disabled={Boolean(sendingPhoto)} onClick={() => fileRef.current?.click()} className="size-8 shrink-0 text-accent-soft"><ImagePlus /></Button>
+            <Button type="button" variant="ghost" size="icon" title="Add photo" aria-label="Add photo" disabled={Boolean(sendingPhoto) || Boolean(editingId)} onClick={() => fileRef.current?.click()} className="size-8 shrink-0 text-accent-soft"><ImagePlus /></Button>
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
