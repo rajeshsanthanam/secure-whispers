@@ -12,4 +12,8 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  vite: {
+    // Pre-bundle lazily discovered deps so a mid-session re-optimize can't mix two React copies.
+    optimizeDeps: { include: ["@radix-ui/react-dialog", "frimousse"] },
+  },
 });
