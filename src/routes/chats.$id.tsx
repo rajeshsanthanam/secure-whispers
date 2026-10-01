@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { clearAttachmentCache, clearCachedAttachment } from "@/lib/attachment-cache";
+import { EmojiPickerSheet } from "@/components/EmojiPickerSheet";
 import {
   decryptSingleMessage,
   deleteMessage,
@@ -626,6 +627,11 @@ function ConversationScreen() {
           <img src={openPhoto} alt="Shared photo enlarged" className="max-h-full max-w-full object-contain" onClick={(event) => event.stopPropagation()} />
         </div>
       ) : null}
+      <EmojiPickerSheet
+        open={Boolean(fullPickerFor)}
+        onOpenChange={(open) => { if (!open) setFullPickerFor(null); }}
+        onPick={(emoji) => { const target = fullPickerFor; setFullPickerFor(null); if (target) void handleReaction(target, emoji); }}
+      />
     </AppShell>
   );
 }
