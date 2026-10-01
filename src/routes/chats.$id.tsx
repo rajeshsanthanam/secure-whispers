@@ -70,6 +70,7 @@ function ConversationScreen() {
   const [readMarkers, setReadMarkers] = useState<ReadMarker[]>([]);
   const [reactions, setReactions] = useState<MessageReactions>({});
   const [reactionPicker, setReactionPicker] = useState<string | null>(null);
+  const [fullPickerFor, setFullPickerFor] = useState<string | null>(null);
   const [reactionPending, setReactionPending] = useState<string | null>(null);
   const [deletingMessage, setDeletingMessage] = useState<string | null>(null);
   const [sendingPhoto, setSendingPhoto] = useState<string | null>(null);
@@ -526,6 +527,7 @@ function ConversationScreen() {
                       {REACTION_EMOJI.map((emoji) => (
                         <Button key={emoji} type="button" variant="ghost" size="icon" className="size-8 text-lg" aria-label={`React ${emoji}`} onClick={() => void handleReaction(message.id, emoji)}>{emoji}</Button>
                       ))}
+                      <Button type="button" variant="ghost" size="icon" className="size-8 text-lg text-accent-soft" aria-label="More emoji" title="More emoji" onClick={() => setFullPickerFor(message.id)}>+</Button>
                     </div>
                   ) : null}
                    {!message.deletedAt && Object.entries(reactions[message.id] ?? {}).length ? (
