@@ -1,27 +1,29 @@
-# Diagnose the reaction tap on a real phone
+# Fix: tapping a reaction emoji does nothing
 
-I can't run a real phone, read your phone's browser console, or watch its network traffic. I can add the logging and explain how you check those three things on your device.
+## What I found so far
+- The database shows only **one** reaction ever saved in the conversation you're testing, at 20:15 UTC. Nothing was saved after that, so your later taps never got through.
+- Another test conversation saved reactions as recently as 20:52 UTC. Saving reactions works in general, so the problem is specific to your situation.
+- Two weak spots in the chat screen fit "nothing happens" (not yet confirmed):
+  1. **Silent ignore:** while one reaction is saving, every other tap is quietly dropped. The quick-row emoji don't look disabled during that time. If a save stalls, every later tap does nothing, and you get no message.
+  2. **Hidden error:** if a save fails, the error appears at the very top of the message list. In a long chat that's off screen, so a failure looks like nothing happened.
 
-## Step 1 — I add temporary logging
-- Add `console.log("reaction tap", emoji)` as the first line of `handleReaction`.
-- Add `console.log("reaction sent", emoji)` after `toggleReaction` succeeds.
-- Add `console.error("reaction failed", err)` in its error path, so a failure shows its exact message.
-- Each is a one-line, in-place addition (around line 301 of the chat screen). Nothing around them changes.
+## Step 1 — Confirm the cause
+- Sign in as a test user in a conversation like yours and tap a quick-row emoji. Record the screen messages, saves, and errors at the moment of the tap.
+- Add three temporary log lines to the reaction handler: "tap", "saved", and "failed + reason". They're added in place, and nothing around them changes.
 
-## Step 2 — You publish and test on the phone
-- Publish. A platform incident is in progress right now (https://status.lovable.dev), so wait for it to clear before you publish and test.
-- **iPhone:** turn on Settings > Safari > Advanced > Web Inspector. Connect to a Mac and open Safari > Develop > [your phone] > the app page. That gives you the Console and Network tabs.
-- **Android:** turn on USB debugging. Connect to a computer and open `chrome://inspect` in desktop Chrome, then click "inspect" on the app tab.
-- Open a chat, open the reaction picker, and tap an emoji.
+## Step 2 — Fix, whatever the cause turns out to be
+- Show reaction errors as a pop-up notice at the bottom of the screen, where you'll always see them, with the real reason.
+- While a reaction is saving, dim the emoji buttons and show that they're busy, instead of silently dropping taps.
+- Add a time limit: if a save takes more than about 15 seconds, stop waiting, unlock the buttons, and show "Reaction didn't go through — try again".
+- If Step 1 finds a specific failure, such as a key or permission problem in this conversation, fix that directly.
 
-## Step 3 — What to report back
-1. Any red console error at the moment of the tap.
-2. Whether a `message_reactions` request appears in Network, and its status code.
-3. Whether "reaction tap", "reaction sent", or "reaction failed" appears.
+## Step 3 — Verify, then clean up
+- Re-test in a signed-in chat at laptop and phone sizes. Confirm the pill appears, and that a second tap on the same emoji removes it.
+- Remove the temporary logs.
+- Then you check it on your real phone, after publishing, once the current platform incident clears (https://status.lovable.dev).
 
-## What the result tells us
-- No "reaction tap": the tap never reaches the button. That points to a touch or layout problem, such as the picker closing or moving before the tap lands.
-- "reaction tap" appears but there's no request: the problem is inside the reaction code.
-- A request goes out but fails: the error text tells us the fix.
-
-After the diagnosis, I'll remove the logs.
+## Technical details
+- `handleReaction` (chats.$id.tsx ~301): `if (!profile || reactionPending) return;` is the silent-drop path. Picker buttons (~529) have no `disabled={reactionPending === message.id}`.
+- `setError` renders at ~450, above the thread, not near the compose bar. Use sonner `toast.error` and mount `<Toaster />` once in `__root.tsx` if it isn't mounted already.
+- Timeout: wrap `toggleReaction` in a `Promise.race` with a 15s rejection.
+- Every edit is in place, with no rewriting of nearby code.
