@@ -577,13 +577,17 @@ export async function toggleReaction(
 export async function loadReactions(conversationId: string, messageIds: string[]): Promise<MessageReactions> {
   if (!messageIds.length) return {};
   const keys = await loadConversationKeys(conversationId);
-  const { data, error } = await supabase
+  // Batch IDs so long chats don't produce a request URL the server rejects.
+  const chunks: string[][] = [];
+  for (let i = 0; i < messageIds.length; i += 100) chunks.push(messageIds.slice(i, i + 100));
+  const results = await Promise.all(chunks.map((chunk) => supabase
     .from("message_reactions")
     .select("message_id, user_id, ciphertext, iv, key_version")
-    .in("message_id", messageIds);
-  if (error) throw new Error("Could not load reactions.");
+    .in("message_id", chunk)));
+  if (results.some((result) => result.error)) throw new Error("Could not load reactions.");
+  const data = results.flatMap((result) => result.data ?? []);
   const grouped: MessageReactions = {};
-  for (const row of data ?? []) {
+  for (const row of data) {
     const key = keys.get(row.key_version);
     if (!key) continue;
     try {
