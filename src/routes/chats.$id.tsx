@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ImagePlus, Pencil, Reply, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
@@ -299,15 +300,22 @@ function ConversationScreen() {
   }
 
   async function handleReaction(messageId: string, emoji: string) {
-    if (!profile || reactionPending) return;
+    console.log("reaction tap", emoji, { pending: reactionPending, hasProfile: Boolean(profile) });
+    if (!profile) { toast.error("You're signed out — sign in again to react."); return; }
+    if (reactionPending) { toast("Still saving your last reaction…"); return; }
     setReactionPending(messageId);
     setReactionPicker(null);
     setError(null);
     try {
-      await toggleReaction(id, messageId, profile.id, emoji);
+      await Promise.race([
+        toggleReaction(id, messageId, profile.id, emoji),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Reaction didn't go through — try again.")), 15000)),
+      ]);
       await refreshReactions();
+      console.log("reaction saved", emoji);
     } catch (reactionError) {
-      setError((reactionError as Error).message);
+      console.error("reaction failed", reactionError);
+      toast.error((reactionError as Error).message);
     } finally {
       setReactionPending(null);
     }
