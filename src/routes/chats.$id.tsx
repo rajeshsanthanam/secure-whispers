@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { clearAttachmentCache, clearCachedAttachment } from "@/lib/attachment-cache";
+import { EmojiPickerSheet } from "@/components/EmojiPickerSheet";
 import {
   decryptSingleMessage,
   deleteMessage,
@@ -70,6 +71,7 @@ function ConversationScreen() {
   const [readMarkers, setReadMarkers] = useState<ReadMarker[]>([]);
   const [reactions, setReactions] = useState<MessageReactions>({});
   const [reactionPicker, setReactionPicker] = useState<string | null>(null);
+  const [fullPickerFor, setFullPickerFor] = useState<string | null>(null);
   const [reactionPending, setReactionPending] = useState<string | null>(null);
   const [deletingMessage, setDeletingMessage] = useState<string | null>(null);
   const [sendingPhoto, setSendingPhoto] = useState<string | null>(null);
@@ -526,6 +528,7 @@ function ConversationScreen() {
                       {REACTION_EMOJI.map((emoji) => (
                         <Button key={emoji} type="button" variant="ghost" size="icon" className="size-8 text-lg" aria-label={`React ${emoji}`} onClick={() => void handleReaction(message.id, emoji)}>{emoji}</Button>
                       ))}
+                      <Button type="button" variant="ghost" size="icon" className="size-8 text-lg text-accent-soft" aria-label="More emoji" title="More emoji" onClick={() => setFullPickerFor(message.id)}>+</Button>
                     </div>
                   ) : null}
                    {!message.deletedAt && Object.entries(reactions[message.id] ?? {}).length ? (
@@ -624,6 +627,11 @@ function ConversationScreen() {
           <img src={openPhoto} alt="Shared photo enlarged" className="max-h-full max-w-full object-contain" onClick={(event) => event.stopPropagation()} />
         </div>
       ) : null}
+      <EmojiPickerSheet
+        open={Boolean(fullPickerFor)}
+        onOpenChange={(open) => { if (!open) setFullPickerFor(null); }}
+        onPick={(emoji) => { const target = fullPickerFor; setFullPickerFor(null); if (target) void handleReaction(target, emoji); }}
+      />
     </AppShell>
   );
 }
