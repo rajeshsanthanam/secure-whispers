@@ -81,6 +81,13 @@ function ConversationScreen() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const messageIdsRef = useRef<string[]>([]);
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (reactionPicker) {
+      pickerRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [reactionPicker]);
   const myId = profile?.id ?? null;
 
   useEffect(() => () => clearAttachmentCache(id), [id]);
@@ -515,7 +522,7 @@ function ConversationScreen() {
                      </div> : null}
                   </div>
                    {!message.deletedAt && reactionPicker === message.id ? (
-                    <div className={`mt-1 flex max-w-full flex-wrap gap-0.5 rounded-md p-1.5 edge glass-strong ${mine ? "justify-end" : "justify-start"}`} role="group" aria-label="Choose a reaction">
+                    <div ref={reactionPicker === message.id ? pickerRef : undefined} className={`mt-1 flex max-w-full flex-wrap gap-0.5 rounded-md p-1.5 edge glass-strong ${mine ? "justify-end" : "justify-start"}`} role="group" aria-label="Choose a reaction">
                       {REACTION_EMOJI.map((emoji) => (
                         <Button key={emoji} type="button" variant="ghost" size="icon" className="size-8 text-lg" aria-label={`React ${emoji}`} onClick={() => void handleReaction(message.id, emoji)}>{emoji}</Button>
                       ))}
