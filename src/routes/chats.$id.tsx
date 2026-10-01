@@ -122,7 +122,7 @@ function ConversationScreen() {
       const ids = messageIdsRef.current;
       setReactions(await loadReactions(id, ids));
     } catch (reactionError) {
-      setError((reactionError as Error).message);
+      toast.error((reactionError as Error).message);
     }
   }, [id]);
 
@@ -300,7 +300,6 @@ function ConversationScreen() {
   }
 
   async function handleReaction(messageId: string, emoji: string) {
-    console.log("reaction tap", emoji, { pending: reactionPending, hasProfile: Boolean(profile) });
     if (!profile) { toast.error("You're signed out — sign in again to react."); return; }
     if (reactionPending) { toast("Still saving your last reaction…"); return; }
     setReactionPending(messageId);
@@ -312,9 +311,7 @@ function ConversationScreen() {
         new Promise((_, reject) => setTimeout(() => reject(new Error("Reaction didn't go through — try again.")), 15000)),
       ]);
       await refreshReactions();
-      console.log("reaction saved", emoji);
     } catch (reactionError) {
-      console.error("reaction failed", reactionError);
       toast.error((reactionError as Error).message);
     } finally {
       setReactionPending(null);
