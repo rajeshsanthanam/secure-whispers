@@ -534,7 +534,7 @@ function ConversationScreen() {
                    {!message.deletedAt && reactionPicker === message.id ? (
                     <div ref={reactionPicker === message.id ? pickerRef : undefined} className={`mt-1 flex max-w-full flex-wrap gap-0.5 rounded-md p-1.5 edge glass-strong ${mine ? "justify-end" : "justify-start"}`} role="group" aria-label="Choose a reaction">
                       {REACTION_EMOJI.map((emoji) => (
-                        <Button key={emoji} type="button" variant="ghost" size="icon" className="size-8 text-lg" aria-label={`React ${emoji}`} onClick={() => void handleReaction(message.id, emoji)}>{emoji}</Button>
+                        <Button key={emoji} type="button" variant="ghost" size="icon" className="size-8 text-lg" aria-label={`React ${emoji}`} disabled={Boolean(reactionPending)} aria-busy={Boolean(reactionPending)} onClick={() => void handleReaction(message.id, emoji)}>{emoji}</Button>
                       ))}
                       <Button type="button" variant="ghost" size="icon" className="size-8 text-lg text-accent-soft" aria-label="More emoji" title="More emoji" onClick={() => setFullPickerFor(message.id)}>+</Button>
                     </div>
