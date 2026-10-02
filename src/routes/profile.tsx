@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -96,6 +96,13 @@ function ProfileScreen() {
               keys. Today it is shown for reference only.
             </p>
           </div>
+
+          <Link
+            to="/stats"
+            className="mt-6 block w-full rounded-xl px-4 py-3 text-center text-sm font-medium text-foreground edge glass-plain"
+          >
+            Chat stats
+          </Link>
 
           <button
             type="button"

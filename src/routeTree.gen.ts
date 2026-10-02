@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as NewRouteImport } from './routes/new'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as StatsRouteImport } from './routes/stats'
 import { Route as ChatsIndexRouteImport } from './routes/chats.index'
 import { Route as ChatsIdRouteImport } from './routes/chats.$id'
 import { Route as ApiPublicLoginRouteImport } from './routes/api/public/login'
@@ -29,6 +30,11 @@ const NewRoute = NewRouteImport.update({
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatsRoute = StatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatsIndexRoute = ChatsIndexRouteImport.update({
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/new': typeof NewRoute
   '/profile': typeof ProfileRoute
+  '/stats': typeof StatsRoute
   '/chats/$id': typeof ChatsIdRoute
   '/chats/': typeof ChatsIndexRoute
   '/api/public/login': typeof ApiPublicLoginRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/new': typeof NewRoute
   '/profile': typeof ProfileRoute
+  '/stats': typeof StatsRoute
   '/chats/$id': typeof ChatsIdRoute
   '/chats': typeof ChatsIndexRoute
   '/api/public/login': typeof ApiPublicLoginRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/new': typeof NewRoute
   '/profile': typeof ProfileRoute
+  '/stats': typeof StatsRoute
   '/chats/$id': typeof ChatsIdRoute
   '/chats/': typeof ChatsIndexRoute
   '/api/public/login': typeof ApiPublicLoginRoute
@@ -75,14 +84,28 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/new' | '/profile' | '/chats/$id' | '/chats/' | '/api/public/login'
+    | '/'
+    | '/new'
+    | '/profile'
+    | '/stats'
+    | '/chats/$id'
+    | '/chats/'
+    | '/api/public/login'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/new' | '/profile' | '/chats/$id' | '/chats' | '/api/public/login'
+  to:
+    | '/'
+    | '/new'
+    | '/profile'
+    | '/stats'
+    | '/chats/$id'
+    | '/chats'
+    | '/api/public/login'
   id:
     | '__root__'
     | '/'
     | '/new'
     | '/profile'
+    | '/stats'
     | '/chats/$id'
     | '/chats/'
     | '/api/public/login'
@@ -92,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   NewRoute: typeof NewRoute
   ProfileRoute: typeof ProfileRoute
+  StatsRoute: typeof StatsRoute
   ChatsIdRoute: typeof ChatsIdRoute
   ChatsIndexRoute: typeof ChatsIndexRoute
   ApiPublicLoginRoute: typeof ApiPublicLoginRoute
@@ -118,6 +142,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stats': {
+      id: '/stats'
+      path: '/stats'
+      fullPath: '/stats'
+      preLoaderRoute: typeof StatsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chats/': {
@@ -148,6 +179,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   NewRoute: NewRoute,
   ProfileRoute: ProfileRoute,
+  StatsRoute: StatsRoute,
   ChatsIdRoute: ChatsIdRoute,
   ChatsIndexRoute: ChatsIndexRoute,
   ApiPublicLoginRoute: ApiPublicLoginRoute,

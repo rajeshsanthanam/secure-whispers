@@ -289,6 +289,7 @@ export type Database = {
           salt: string
         }[]
       }
+      get_my_chat_stats: { Args: { _conversation_id?: string }; Returns: Json }
       get_my_key_material: {
         Args: never
         Returns: {
