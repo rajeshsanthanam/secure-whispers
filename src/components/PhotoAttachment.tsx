@@ -6,7 +6,7 @@ import { loadAttachment, type DecryptedMessage } from "@/lib/messaging";
 export function PhotoAttachment({ conversationId, message, onOpen }: {
   conversationId: string;
   message: DecryptedMessage;
-  onOpen: (url: string) => void;
+  onOpen: () => void;
 }) {
   const [url, setUrl] = useState(() => cachedAttachment(message.id) ?? null);
   const [error, setError] = useState(false);
@@ -37,7 +37,7 @@ export function PhotoAttachment({ conversationId, message, onOpen }: {
   );
   if (!url) return <div role="status" aria-label="Loading photo" className="h-36 w-48 animate-pulse rounded-md bg-muted/40" />;
   return (
-    <Button type="button" variant="ghost" className="h-auto max-w-full p-0 hover:bg-transparent" onClick={() => onOpen(url)} aria-label="View photo full size">
+    <Button type="button" variant="ghost" className="h-auto max-w-full p-0 hover:bg-transparent" onClick={onOpen} aria-label="View photo full size">
       <img src={url} alt="Shared photo" className="max-h-72 max-w-full rounded-md object-contain" />
     </Button>
   );

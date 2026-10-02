@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
 import { Protected } from "@/components/Protected";
 import { PhotoAttachment } from "@/components/PhotoAttachment";
+import { PhotoCarousel } from "@/components/PhotoCarousel";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -341,6 +342,7 @@ function ConversationScreen() {
 
   const others = conversation?.others ?? [];
   const messageById = new Map(messages.map((message) => [message.id, message]));
+  const photoMessages = messages.filter((message) => message.kind === "image" && !message.deletedAt);
   const replyingTo = replyingToId ? messageById.get(replyingToId) : undefined;
 
   function replySummary(message: DecryptedMessage | undefined) {
@@ -490,7 +492,7 @@ function ConversationScreen() {
                          <span className="italic text-mist/60">This message was deleted</span>
                        ) : message.kind === "image" ? (
                         <div className="max-w-full space-y-2">
-                          <PhotoAttachment conversationId={id} message={message} onOpen={setOpenPhoto} />
+                           <PhotoAttachment conversationId={id} message={message} onOpen={() => setOpenPhoto(message.id)} />
                           {message.body ? <p>{message.body}</p> : null}
                         </div>
                       ) : message.body}
@@ -627,10 +629,7 @@ function ConversationScreen() {
         </button>
       ) : null}
       {openPhoto ? (
-        <div role="dialog" aria-modal="true" aria-label="Photo viewer" className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4" onClick={() => setOpenPhoto(null)} onKeyDown={(event) => { if (event.key === "Escape") setOpenPhoto(null); }}>
-          <Button type="button" variant="ghost" size="icon" aria-label="Close photo" className="absolute right-4 top-4 text-foreground" onClick={() => setOpenPhoto(null)}><X /></Button>
-          <img src={openPhoto} alt="Shared photo enlarged" className="max-h-full max-w-full object-contain" onClick={(event) => event.stopPropagation()} />
-        </div>
+        <PhotoCarousel conversationId={id} messages={photoMessages} selectedMessageId={openPhoto} onClose={() => setOpenPhoto(null)} />
       ) : null}
       <EmojiPickerSheet
         open={Boolean(fullPickerFor)}
