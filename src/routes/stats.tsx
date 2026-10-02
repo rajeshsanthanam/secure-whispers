@@ -40,8 +40,8 @@ export const Route = createFileRoute("/stats")({
 });
 
 function StatsScreen() {
-  const { user } = useAuth();
-  const userId = user?.id ?? "";
+  const { session } = useAuth();
+  const userId = session?.user.id ?? "";
   const [chatId, setChatId] = useState<string>("");
 
   const chats = useQuery({
@@ -53,9 +53,10 @@ function StatsScreen() {
   const stats = useQuery({
     queryKey: ["chat-stats", chatId],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("get_my_chat_stats", {
-        _conversation_id: chatId || undefined,
-      });
+      const { data, error } = await supabase.rpc(
+        "get_my_chat_stats",
+        chatId ? { _conversation_id: chatId } : {},
+      );
       if (error) throw new Error("Could not load stats.");
       return data as unknown as Stats;
     },
