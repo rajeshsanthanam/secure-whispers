@@ -13,3 +13,4 @@
 - Store photo attachments as AES-GCM ciphertext in private, conversation-scoped storage paths and decrypt with the message's key version in the browser; this keeps old photos readable after key rotation.
 - Keep replies as same-conversation message references and display quoted content from already-decrypted in-memory messages; this avoids duplicate plaintext storage or a second lookup.
 - Tombstone deleted messages in place, clearing encrypted body and photo references after private file cleanup; this preserves reply and read-marker references.
+- Keep conversation photo browsing in a dedicated carousel that decrypts the selected photo and only preloads its neighbors; this keeps long chats memory-efficient.
