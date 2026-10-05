@@ -126,7 +126,7 @@ function ConversationScreen() {
           setHasMore(page.hasMore);
           return fresh;
         }
-        const cutoff = fresh[0].createdAt;
+        const cutoff = fresh[0]!.createdAt;
         return [...current.filter((m) => m.createdAt < cutoff && !freshIds.has(m.id)), ...fresh];
       });
       setReadMarkers(markers);
@@ -261,12 +261,12 @@ function ConversationScreen() {
           });
         },
       )
-      .subscribe();
+      .subscribe(onChannelStatus());
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [id]);
+  }, [id, onChannelStatus]);
 
   useEffect(() => {
     const thread = threadRef.current;
