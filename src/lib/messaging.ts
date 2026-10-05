@@ -320,17 +320,28 @@ export async function createConversation(options: {
   return conversationId;
 }
 
-export async function loadMessages(conversationId: string): Promise<DecryptedMessage[]> {
+export const MESSAGE_PAGE = 50;
+
+/** Newest `limit` messages (optionally older than `before`), returned oldest-first for display. */
+export async function loadMessages(
+  conversationId: string,
+  options: { before?: string; limit?: number } = {},
+): Promise<{ messages: DecryptedMessage[]; hasMore: boolean }> {
+  const limit = options.limit ?? MESSAGE_PAGE;
   const keys = await loadConversationKeys(conversationId);
-  const { data, error } = await supabase
+  let query = supabase
     .from("messages")
      .select("id, sender_id, ciphertext, iv, key_version, created_at, kind, attachment_path, attachment_iv, reply_to_message_id, deleted_at, edited_at")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true });
+    .eq("conversation_id", conversationId);
+  if (options.before) query = query.lt("created_at", options.before);
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit);
   if (error) throw new Error("Could not load messages.");
 
   const out: DecryptedMessage[] = [];
-  for (const row of data ?? []) {
+  for (const row of [...(data ?? [])].reverse()) {
     const key = keys.get(row.key_version);
     let body = "Cannot be decrypted with your keys.";
      if (key && !row.deleted_at) {
@@ -354,7 +365,7 @@ export async function loadMessages(conversationId: string): Promise<DecryptedMes
        editedAt: row.edited_at,
     });
   }
-  return out;
+  return { messages: out, hasMore: (data?.length ?? 0) === limit };
 }
 
 export async function decryptSingleMessage(
@@ -527,13 +538,13 @@ export async function loadAttachment(conversationId: string, message: DecryptedM
   return URL.createObjectURL(new Blob([plain], { type: "image/jpeg" }));
 }
 
-/** Each person has one encrypted reaction per message, under the current key version. */
+/** Each person has one encrypted reaction per message, under the current key version. Returns the resulting emoji, or null when removed. */
 export async function toggleReaction(
   conversationId: string,
   messageId: string,
   userId: string,
   emoji: string,
-): Promise<void> {
+): Promise<string | null> {
   const { data: target, error: targetError } = await supabase.from("messages")
     .select("deleted_at").eq("id", messageId).eq("conversation_id", conversationId).maybeSingle();
   if (targetError || !target || target.deleted_at) throw new Error("Cannot react to a deleted message.");
@@ -558,7 +569,7 @@ export async function toggleReaction(
     if (previous === emoji) {
       const { error } = await supabase.from("message_reactions").delete().eq("message_id", messageId).eq("user_id", userId);
       if (error) throw new Error("Could not remove reaction.");
-      return;
+      return null;
     }
   }
 
@@ -571,21 +582,46 @@ export async function toggleReaction(
     ? await supabase.from("message_reactions").update(row).eq("message_id", messageId).eq("user_id", userId)
     : await supabase.from("message_reactions").insert(row);
   if (error) throw new Error("Could not save reaction.");
+  return emoji;
 }
 
-/** Decrypt locally; old reactions remain readable with their original key version. */
-export async function loadReactions(conversationId: string, messageIds: string[]): Promise<MessageReactions> {
-  if (!messageIds.length) return {};
+/** Decrypt one reaction row locally; null when no usable key. */
+export async function decryptReactionRow(
+  conversationId: string,
+  row: { ciphertext: string; iv: string; key_version: number },
+): Promise<string | null> {
   const keys = await loadConversationKeys(conversationId);
-  // Batch IDs so long chats don't produce a request URL the server rejects.
-  const chunks: string[][] = [];
-  for (let i = 0; i < messageIds.length; i += 100) chunks.push(messageIds.slice(i, i + 100));
-  const results = await Promise.all(chunks.map((chunk) => supabase
-    .from("message_reactions")
-    .select("message_id, user_id, ciphertext, iv, key_version")
-    .in("message_id", chunk)));
-  if (results.some((result) => result.error)) throw new Error("Could not load reactions.");
-  const data = results.flatMap((result) => result.data ?? []);
+  const key = keys.get(row.key_version);
+  if (!key) return null;
+  try {
+    return await decryptMessage(key, row.ciphertext, row.iv);
+  } catch {
+    return null;
+  }
+}
+
+const REACTION_PAGE = 500;
+
+/**
+ * Load every reaction in the conversation, joined through messages and paged
+ * with .range() until a short page returns (server responses are row-capped).
+ * Decrypt locally; old reactions remain readable with their original key version.
+ */
+export async function loadReactions(conversationId: string): Promise<MessageReactions> {
+  const keys = await loadConversationKeys(conversationId);
+  const data: { message_id: string; user_id: string; ciphertext: string; iv: string; key_version: number }[] = [];
+  for (let from = 0; ; from += REACTION_PAGE) {
+    const { data: page, error } = await supabase
+      .from("message_reactions")
+      .select("message_id, user_id, ciphertext, iv, key_version, messages!inner(conversation_id)")
+      .eq("messages.conversation_id", conversationId)
+      .order("message_id", { ascending: true })
+      .order("user_id", { ascending: true })
+      .range(from, from + REACTION_PAGE - 1);
+    if (error) throw new Error("Could not load reactions.");
+    data.push(...(page ?? []));
+    if (!page || page.length < REACTION_PAGE) break;
+  }
   const grouped: MessageReactions = {};
   for (const row of data) {
     const key = keys.get(row.key_version);
@@ -599,6 +635,19 @@ export async function loadReactions(conversationId: string, messageIds: string[]
     }
   }
   return grouped;
+}
+
+/** Pure local update: set (or clear, when emoji is null) one user's reaction on one message. */
+export function applyReaction(current: MessageReactions, messageId: string, userId: string, emoji: string | null): MessageReactions {
+  const byEmoji: Record<string, string[]> = {};
+  for (const [e, users] of Object.entries(current[messageId] ?? {})) {
+    const rest = users.filter((u) => u !== userId);
+    if (rest.length) byEmoji[e] = rest;
+  }
+  if (emoji) byEmoji[emoji] = [...(byEmoji[emoji] ?? []), userId];
+  const next = { ...current };
+  if (Object.keys(byEmoji).length) next[messageId] = byEmoji; else delete next[messageId];
+  return next;
 }
 
 /**
