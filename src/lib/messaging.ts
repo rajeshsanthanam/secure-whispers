@@ -365,7 +365,7 @@ export async function loadMessages(
        editedAt: row.edited_at,
     });
   }
-  return out;
+  return { messages: out, hasMore: (data?.length ?? 0) === limit };
 }
 
 export async function decryptSingleMessage(

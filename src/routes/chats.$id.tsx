@@ -14,6 +14,8 @@ import { useAuth } from "@/lib/auth";
 import { clearAttachmentCache, clearCachedAttachment } from "@/lib/attachment-cache";
 import { EmojiPickerSheet } from "@/components/EmojiPickerSheet";
 import {
+  applyReaction,
+  decryptReactionRow,
   decryptSingleMessage,
   deleteMessage,
   editMessage,
@@ -86,6 +88,13 @@ function ConversationScreen() {
   const messageIdsRef = useRef<string[]>([]);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
+  const messagesRef = useRef<DecryptedMessage[]>([]);
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const resyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prependAnchor = useRef<number | null>(null);
+  const loadingOlderRef = useRef(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   useEffect(() => {
     if (reactionPicker) {
@@ -98,38 +107,66 @@ function ConversationScreen() {
   useEffect(() => () => { if (highlightTimer.current) clearTimeout(highlightTimer.current); }, []);
   useEffect(() => { setReplyingToId(null); setHighlightedId(null); }, [id]);
 
+  // Full re-sync: messages + read markers + reactions, always together.
   const refresh = useCallback(async () => {
     if (!profile) return;
     try {
-      const [meta, history, markers] = await Promise.all([
+      const [meta, page, markers, allReactions] = await Promise.all([
         getConversation(id, profile.id),
         loadMessages(id),
         listReadMarkers(id),
+        loadReactions(id),
       ]);
       setConversation(meta);
-      setMessages(history);
+      setMessages((current) => {
+        const fresh = page.messages;
+        const freshIds = new Set(fresh.map((m) => m.id));
+        // Keep already-loaded older pages only if the new page overlaps them (no gap).
+        if (!current.some((m) => freshIds.has(m.id)) || !fresh.length) {
+          setHasMore(page.hasMore);
+          return fresh;
+        }
+        const cutoff = fresh[0].createdAt;
+        return [...current.filter((m) => m.createdAt < cutoff && !freshIds.has(m.id)), ...fresh];
+      });
       setReadMarkers(markers);
-      setReactions(await loadReactions(id, history.map((message) => message.id)));
-      await markConversationRead(id, profile.id, history.at(-1)?.id ?? null);
+      setReactions(allReactions);
+      await markConversationRead(id, profile.id, page.messages.at(-1)?.id ?? null);
     } catch (loadError) {
       setError((loadError as Error).message);
     }
   }, [id, profile]);
 
   messageIdsRef.current = messages.map((message) => message.id);
+  messagesRef.current = messages;
+  refreshRef.current = refresh;
 
-  const refreshReactions = useCallback(async () => {
-    try {
-      const ids = messageIdsRef.current;
-      setReactions(await loadReactions(id, ids));
-    } catch (reactionError) {
-      toast.error((reactionError as Error).message);
-    }
-  }, [id]);
+  // Debounced (~1s) full re-sync for wake, network return and channel reconnects.
+  const scheduleResync = useCallback(() => {
+    if (resyncTimer.current) clearTimeout(resyncTimer.current);
+    resyncTimer.current = setTimeout(() => { void refreshRef.current(); }, 1000);
+  }, []);
+
+  // Subscribe callback: the first SUBSCRIBED is the initial join; later ones are reconnects.
+  const onChannelStatus = useCallback(() => {
+    let joined = false;
+    return (status: string) => {
+      if (status !== "SUBSCRIBED") return;
+      if (joined) scheduleResync();
+      joined = true;
+    };
+  }, [scheduleResync]);
 
   useEffect(() => {
-    void refreshReactions();
-  }, [messages.length, refreshReactions]);
+    const onVisible = () => { if (document.visibilityState === "visible") scheduleResync(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", scheduleResync);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", scheduleResync);
+      if (resyncTimer.current) clearTimeout(resyncTimer.current);
+    };
+  }, [scheduleResync]);
 
   useEffect(() => {
     const channel = supabase
@@ -138,13 +175,22 @@ function ConversationScreen() {
         "postgres_changes",
         { event: "*", schema: "public", table: "message_reactions" },
         (payload) => {
-          const row = (payload.new && Object.keys(payload.new).length ? payload.new : payload.old) as { message_id?: string };
-          if (row?.message_id && messageIdsRef.current.includes(row.message_id)) void refreshReactions();
+          // Apply the changed row locally instead of re-fetching every reaction.
+          if (payload.eventType === "DELETE") {
+            const old = payload.old as { message_id?: string; user_id?: string };
+            if (old?.message_id && old.user_id) setReactions((current) => applyReaction(current, old.message_id!, old.user_id!, null));
+            return;
+          }
+          const row = payload.new as { message_id?: string; user_id?: string; ciphertext: string; iv: string; key_version: number };
+          if (!row?.message_id || !row.user_id) return;
+          void decryptReactionRow(id, row).then((emoji) => {
+            if (emoji) setReactions((current) => applyReaction(current, row.message_id!, row.user_id!, emoji));
+          });
         },
       )
-      .subscribe();
+      .subscribe(onChannelStatus());
     return () => { void supabase.removeChannel(channel); };
-  }, [id, refreshReactions]);
+  }, [id, onChannelStatus]);
 
   useEffect(() => {
     void refresh();
@@ -190,12 +236,13 @@ function ConversationScreen() {
           });
         },
       )
-      .subscribe();
+      .subscribe(onChannelStatus());
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [id, myId]);
+  }, [id, myId, onChannelStatus]);
+
 
   useEffect(() => {
     const channel = supabase
@@ -223,8 +270,37 @@ function ConversationScreen() {
 
   useEffect(() => {
     const thread = threadRef.current;
-    if (thread) thread.scrollTop = thread.scrollHeight;
+    if (!thread) return;
+    if (prependAnchor.current !== null) {
+      // Older page was prepended: keep the reader at the same message.
+      thread.scrollTop = thread.scrollHeight - prependAnchor.current;
+      prependAnchor.current = null;
+      return;
+    }
+    thread.scrollTop = thread.scrollHeight;
   }, [messages.length, sendingPhoto]);
+
+  async function loadOlder() {
+    const oldest = messagesRef.current[0];
+    if (!oldest || !hasMore || loadingOlderRef.current) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const page = await loadMessages(id, { before: oldest.createdAt });
+      const thread = threadRef.current;
+      if (thread) prependAnchor.current = thread.scrollHeight - thread.scrollTop;
+      setMessages((current) => {
+        const known = new Set(current.map((m) => m.id));
+        return [...page.messages.filter((m) => !known.has(m.id)), ...current];
+      });
+      setHasMore(page.hasMore);
+    } catch (olderError) {
+      toast.error((olderError as Error).message);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }
 
   async function handleSend(event: React.FormEvent) {
     event.preventDefault();
@@ -307,11 +383,11 @@ function ConversationScreen() {
     setReactionPicker(null);
     setError(null);
     try {
-      await Promise.race([
+      const result = await Promise.race([
         toggleReaction(id, messageId, profile.id, emoji),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Reaction didn't go through — try again.")), 15000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Reaction didn't go through — try again.")), 15000)),
       ]);
-      await refreshReactions();
+      setReactions((current) => applyReaction(current, messageId, profile.id, result));
     } catch (reactionError) {
       toast.error((reactionError as Error).message);
     } finally {
@@ -447,12 +523,20 @@ function ConversationScreen() {
           </div>
         ) : null}
 
-        <div ref={threadRef} className="flex-1 min-h-0 space-y-4 overflow-y-auto px-4 py-6 sm:px-5">
+        <div ref={threadRef} onScroll={(event) => { if (event.currentTarget.scrollTop < 80) void loadOlder(); }} className="flex-1 min-h-0 space-y-4 overflow-y-auto px-4 py-6 sm:px-5">
           <div className="flex justify-center">
             <span className="rounded-full px-3 py-1 text-[10px] font-medium tracking-[0.15em] text-mist/60 uppercase edge glass-plain">
               Encrypted end-to-end
             </span>
           </div>
+
+          {hasMore ? (
+            <div className="flex justify-center">
+              <Button type="button" variant="ghost" size="sm" disabled={loadingOlder} onClick={() => void loadOlder()} className="h-7 text-xs text-mist">
+                {loadingOlder ? "Loading…" : "Load older messages"}
+              </Button>
+            </div>
+          ) : null}
 
           {error ? <p className="text-center text-xs text-destructive">{error}</p> : null}
 
