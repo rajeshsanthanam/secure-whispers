@@ -10,9 +10,13 @@ type PhotoCarouselProps = {
   messages: DecryptedMessage[];
   selectedMessageId: string;
   onClose: () => void;
+  total?: number;
+  hasMoreOlder?: boolean;
+  onNeedOlder?: () => Promise<void>;
+  senderName?: (senderId: string) => string;
 };
 
-export function PhotoCarousel({ conversationId, messages, selectedMessageId, onClose }: PhotoCarouselProps) {
+export function PhotoCarousel({ conversationId, messages, selectedMessageId, onClose, total, hasMoreOlder, onNeedOlder, senderName }: PhotoCarouselProps) {
   const selectedIndex = messages.findIndex((message) => message.id === selectedMessageId);
   const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
   const message = messages[safeIndex];
@@ -22,6 +26,7 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
   const [activeId, setActiveId] = useState(message?.id ?? selectedMessageId);
   const touchStartX = useRef<number | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const loadingOlder = useRef(false);
 
   const activeIndex = messages.findIndex((photo) => photo.id === activeId);
   const currentIndex = activeIndex >= 0 ? activeIndex : safeIndex;
@@ -37,6 +42,13 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
   useEffect(() => {
     dialogRef.current?.focus();
   }, []);
+
+  // Near the oldest loaded photo: fetch older ones. Position is tracked by id, so prepending keeps the same photo.
+  useEffect(() => {
+    if (!hasMoreOlder || !onNeedOlder || currentIndex >= 5 || loadingOlder.current) return;
+    loadingOlder.current = true;
+    void onNeedOlder().finally(() => { loadingOlder.current = false; });
+  }, [currentIndex, hasMoreOlder, onNeedOlder, messages.length]);
 
   useEffect(() => {
     if (!current) return;
@@ -96,7 +108,15 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
       }}
     >
       <div className="flex h-16 shrink-0 items-center justify-between px-4" onClick={(event) => event.stopPropagation()}>
-        <span className="text-sm font-medium text-mist">{currentIndex + 1} of {messages.length}</span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-mist">
+            {total !== undefined ? Math.max(1, total - (messages.length - 1 - currentIndex)) : currentIndex + 1} of {total ?? messages.length}
+          </p>
+          <p className="truncate text-xs text-mist/70">
+            {senderName ? `${senderName(current.senderId)} · ` : ""}
+            {new Date(current.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+          </p>
+        </div>
         <Button type="button" variant="ghost" size="icon" aria-label="Close photo" className="text-foreground" onClick={onClose}><X /></Button>
       </div>
 
