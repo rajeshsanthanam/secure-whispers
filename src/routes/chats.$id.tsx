@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ImagePlus, Pencil, Reply, Trash2, X } from "lucide-react";
+import { ImagePlus, Images, Pencil, Reply, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
@@ -21,6 +21,8 @@ import {
   editMessage,
   getConversation,
   loadReactions,
+  loadConversationPhotos,
+  countConversationPhotos,
   listReadMarkers,
   loadMessages,
   markConversationRead,
@@ -80,6 +82,8 @@ function ConversationScreen() {
   const [deletingMessage, setDeletingMessage] = useState<string | null>(null);
   const [sendingPhoto, setSendingPhoto] = useState<string | null>(null);
   const [openPhoto, setOpenPhoto] = useState<string | null>(null);
+  const [gallery, setGallery] = useState<{ photos: DecryptedMessage[]; hasMore: boolean; total: number; selectedId: string } | null>(null);
+  const [galleryLoading, setGalleryLoading] = useState(false);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -458,6 +462,49 @@ function ConversationScreen() {
     });
 
 
+  function senderName(senderId: string) {
+    if (senderId === profile?.id) return "You";
+    const person = conversation?.members.find((member) => member.id === senderId);
+    return person?.display_name || person?.username || "Unknown";
+  }
+
+  async function openGallery() {
+    if (galleryLoading) return;
+    setGalleryLoading(true);
+    try {
+      const [page, total] = await Promise.all([loadConversationPhotos(id), countConversationPhotos(id)]);
+      const newest = page.photos.at(-1);
+      if (!total || !newest) { toast("No photos in this chat yet"); return; }
+      setGallery({ photos: page.photos, hasMore: page.hasMore, total, selectedId: newest.id });
+    } catch {
+      toast.error("Could not load photos.");
+    } finally {
+      setGalleryLoading(false);
+    }
+  }
+
+  async function loadOlderPhotos() {
+    const oldest = gallery?.photos[0];
+    if (!oldest) return;
+    try {
+      const page = await loadConversationPhotos(id, { before: oldest.createdAt });
+      setGallery((current) => {
+        if (!current) return current;
+        const known = new Set(current.photos.map((photo) => photo.id));
+        return { ...current, photos: [...page.photos.filter((photo) => !known.has(photo.id)), ...current.photos], hasMore: page.hasMore };
+      });
+    } catch {
+      toast.error("Could not load photos.");
+    }
+  }
+
+  function closeGallery() {
+    // Release decrypted photos that only the gallery needed.
+    const loaded = new Set(messagesRef.current.map((message) => message.id));
+    for (const photo of gallery?.photos ?? []) if (!loaded.has(photo.id)) clearCachedAttachment(photo.id);
+    setGallery(null);
+  }
+
   return (
     <AppShell>
       <div className="flex h-[70vh] flex-col overflow-hidden rounded-3xl edge glass">
@@ -469,6 +516,7 @@ function ConversationScreen() {
             <span>←</span>
             <span>Chats</span>
           </Link>
+          <Button type="button" variant="ghost" size="icon" aria-label="Photos" title="Photos" disabled={galleryLoading} onClick={() => void openGallery()} className="size-9 shrink-0 rounded-full text-mist edge glass hover:text-foreground"><Images /></Button>
           <Avatar label={conversation?.title ?? "?"} />
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-base font-semibold text-foreground">
@@ -713,7 +761,19 @@ function ConversationScreen() {
         </button>
       ) : null}
       {openPhoto ? (
-        <PhotoCarousel conversationId={id} messages={photoMessages} selectedMessageId={openPhoto} onClose={() => setOpenPhoto(null)} />
+        <PhotoCarousel conversationId={id} messages={photoMessages} selectedMessageId={openPhoto} onClose={() => setOpenPhoto(null)} senderName={senderName} />
+      ) : null}
+      {gallery ? (
+        <PhotoCarousel
+          conversationId={id}
+          messages={gallery.photos}
+          selectedMessageId={gallery.selectedId}
+          onClose={closeGallery}
+          senderName={senderName}
+          total={gallery.total}
+          hasMoreOlder={gallery.hasMore}
+          onNeedOlder={loadOlderPhotos}
+        />
       ) : null}
       <EmojiPickerSheet
         open={Boolean(fullPickerFor)}

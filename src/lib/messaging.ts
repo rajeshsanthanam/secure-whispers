@@ -385,6 +385,40 @@ export async function decryptSingleMessage(
   return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: row.kind === "image" ? "image" : "text", attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null, replyToMessageId: row.reply_to_message_id ?? null, deletedAt: row.deleted_at ?? null, editedAt: row.edited_at ?? null };
 }
 
+/** Newest undeleted photo messages (captions decrypted, photo bytes untouched), oldest-first. */
+export async function loadConversationPhotos(
+  conversationId: string,
+  options: { before?: string; limit?: number } = {},
+): Promise<{ photos: DecryptedMessage[]; hasMore: boolean }> {
+  const limit = options.limit ?? 40;
+  let query = supabase
+    .from("messages")
+    .select("id, sender_id, ciphertext, iv, key_version, created_at, kind, attachment_path, attachment_iv, reply_to_message_id, deleted_at, edited_at")
+    .eq("conversation_id", conversationId)
+    .eq("kind", "image")
+    .is("deleted_at", null);
+  if (options.before) query = query.lt("created_at", options.before);
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error("Could not load photos.");
+  const rows = [...(data ?? [])].reverse();
+  const photos = await Promise.all(rows.map((row) => decryptSingleMessage(conversationId, row)));
+  return { photos, hasMore: (data?.length ?? 0) === limit };
+}
+
+export async function countConversationPhotos(conversationId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", conversationId)
+    .eq("kind", "image")
+    .is("deleted_at", null);
+  if (error) throw new Error("Could not load photos.");
+  return count ?? 0;
+}
+
 /** Remove the encrypted photo first; preserve the message row for replies and read positions. */
 export async function deleteMessage(messageId: string, conversationId: string): Promise<void> {
   const { data: auth, error: authError } = await supabase.auth.getUser();
