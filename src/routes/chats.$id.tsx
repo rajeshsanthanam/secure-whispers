@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ImagePlus, Images, Pencil, Reply, Trash2, X } from "lucide-react";
+import { ImagePlus, Images, Pencil, Reply, Trash2, Video, X } from "lucide-react";
+import { VideoRecorderSheet } from "@/components/VideoRecorderSheet";
+import { VideoAttachment } from "@/components/VideoAttachment";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
@@ -29,6 +31,7 @@ import {
   removeMemberAndRotate,
   sendMessage,
   sendImageMessage,
+  sendVideoMessage,
   toggleReaction,
   type DecryptedMessage,
   type PublicProfile,
@@ -81,6 +84,9 @@ function ConversationScreen() {
   const [reactionPending, setReactionPending] = useState<string | null>(null);
   const [deletingMessage, setDeletingMessage] = useState<string | null>(null);
   const [sendingPhoto, setSendingPhoto] = useState<string | null>(null);
+  const [sendingVideo, setSendingVideo] = useState(false);
+  const [recorderOpen, setRecorderOpen] = useState(false);
+  const closeRecorder = useCallback(() => setRecorderOpen(false), []);
   const [openPhoto, setOpenPhoto] = useState<string | null>(null);
   const [gallery, setGallery] = useState<{ photos: DecryptedMessage[]; hasMore: boolean; total: number; selectedId: string } | null>(null);
   const [galleryLoading, setGalleryLoading] = useState(false);
@@ -282,7 +288,7 @@ function ConversationScreen() {
       return;
     }
     thread.scrollTop = thread.scrollHeight;
-  }, [messages.length, sendingPhoto]);
+  }, [messages.length, sendingPhoto, sendingVideo]);
 
   async function loadOlder() {
     const oldest = messagesRef.current[0];
@@ -361,6 +367,23 @@ function ConversationScreen() {
     }
   }
 
+  async function handleVideo(blob: Blob) {
+    setRecorderOpen(false);
+    if (!profile || sendingVideo) return;
+    setSendingVideo(true);
+    const caption = draft.trim();
+    const replyId = replyingToId;
+    try {
+      await sendVideoMessage(id, profile.id, blob, caption, replyId);
+      setDraft("");
+      setReplyingToId((current) => current === replyId ? null : current);
+    } catch (videoError) {
+      toast.error((videoError as Error).message);
+    } finally {
+      setSendingVideo(false);
+    }
+  }
+
   async function handleRemove(member: PublicProfile) {
     if (!profile) return;
     try {
@@ -433,7 +456,7 @@ function ConversationScreen() {
       : conversation?.members.find((person) => person.id === message.senderId)?.display_name
         || conversation?.members.find((person) => person.id === message.senderId)?.username
         || "Unknown";
-    return { sender, preview: message.kind === "image" ? "Photo" : message.body };
+    return { sender, preview: message.kind === "image" ? "Photo" : message.kind === "video" ? `Video${message.body ? ` · ${message.body}` : ""}` : message.body };
   }
 
   function jumpToMessage(messageId: string) {
@@ -627,6 +650,11 @@ function ConversationScreen() {
                            <PhotoAttachment conversationId={id} message={message} onOpen={() => setOpenPhoto(message.id)} />
                           {message.body ? <p>{message.body}</p> : null}
                         </div>
+                      ) : message.kind === "video" ? (
+                        <div className="max-w-full space-y-2">
+                          <VideoAttachment conversationId={id} message={message} />
+                          {message.body ? <p>{message.body}</p> : null}
+                        </div>
                       ) : message.body}
                     </div>
                      {!message.deletedAt ? <div className="flex shrink-0 items-center gap-0.5">
@@ -713,7 +741,15 @@ function ConversationScreen() {
               </div>
             </div>
           ) : null}
+          {sendingVideo ? (
+            <div className="flex justify-end" role="status" aria-label="Sending video">
+              <div className="max-w-[78%] rounded-2xl p-3 bubble-mine">
+                <p className="text-xs text-foreground/70">Sending video…</p>
+              </div>
+            </div>
+          ) : null}
         </div>
+        <VideoRecorderSheet open={recorderOpen} onClose={closeRecorder} onSend={(blob) => void handleVideo(blob)} />
 
         <form className="border-t px-4 py-3" onSubmit={handleSend}>
           {editingId ? (
@@ -734,6 +770,7 @@ function ConversationScreen() {
           <div className="flex items-center gap-2 rounded-2xl px-3 py-2 edge glass-plain">
             <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label="Choose a photo" onChange={(event) => void handlePhoto(event.target.files?.[0])} />
             <Button type="button" variant="ghost" size="icon" title="Add photo" aria-label="Add photo" disabled={Boolean(sendingPhoto) || Boolean(editingId)} onClick={() => fileRef.current?.click()} className="size-8 shrink-0 text-accent-soft"><ImagePlus /></Button>
+            <Button type="button" variant="ghost" size="icon" title="Record video" aria-label="Record video" disabled={sendingVideo || Boolean(editingId)} onClick={() => setRecorderOpen(true)} className="size-8 shrink-0 text-accent-soft"><Video /></Button>
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
