@@ -82,7 +82,7 @@ export function VideoRecorderSheet({ open, onClose, onSend }: {
     const mimeType = pickMimeType();
     let recorder: MediaRecorder;
     try {
-      recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1_000_000, audioBitsPerSecond: 64_000 });
+      recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: 1_000_000, audioBitsPerSecond: 64_000 });
     } catch {
       toast.error("This browser can't record video.");
       return;
