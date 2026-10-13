@@ -8,6 +8,13 @@
       "when": 1790974255592,
       "tag": "0000_chat_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791908878404,
+      "tag": "0001_allow_video_kind",
+      "breakpoints": true
     }
   ]
 }
