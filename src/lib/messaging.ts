@@ -38,7 +38,7 @@ export type DecryptedMessage = {
   body: string;
   createdAt: string;
   keyVersion: number;
-  kind: "text" | "image";
+  kind: "text" | "image" | "video";
   attachmentPath: string | null;
   attachmentIv: string | null;
   replyToMessageId: string | null;
@@ -208,7 +208,7 @@ export async function listConversations(userId: string): Promise<ConversationSum
         const key = keys.get(latest.key_version);
         if (key) {
           const caption = await decryptMessage(key, latest.ciphertext, latest.iv);
-          preview = latest.kind === "image" ? `Photo${caption ? ` · ${caption}` : ""}` : caption;
+          preview = latest.kind === "image" ? `Photo${caption ? ` · ${caption}` : ""}` : latest.kind === "video" ? `Video${caption ? ` · ${caption}` : ""}` : caption;
         } else preview = "Encrypted message";
       } catch {
         preview = "Encrypted message";
@@ -357,7 +357,7 @@ export async function loadMessages(
       body,
       createdAt: row.created_at,
       keyVersion: row.key_version,
-      kind: row.kind === "image" ? "image" : "text",
+      kind: (row.kind === "image" || row.kind === "video" ? row.kind : "text") as DecryptedMessage["kind"],
       attachmentPath: row.attachment_path,
       attachmentIv: row.attachment_iv,
       replyToMessageId: row.reply_to_message_id,
@@ -382,7 +382,7 @@ export async function decryptSingleMessage(
       /* keep fallback */
     }
   }
-  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: row.kind === "image" ? "image" : "text", attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null, replyToMessageId: row.reply_to_message_id ?? null, deletedAt: row.deleted_at ?? null, editedAt: row.edited_at ?? null };
+  return { id: row.id, senderId: row.sender_id, body, createdAt: row.created_at, keyVersion: row.key_version, kind: (row.kind === "image" || row.kind === "video" ? row.kind : "text") as DecryptedMessage["kind"], attachmentPath: row.attachment_path ?? null, attachmentIv: row.attachment_iv ?? null, replyToMessageId: row.reply_to_message_id ?? null, deletedAt: row.deleted_at ?? null, editedAt: row.edited_at ?? null };
 }
 
 /** Newest undeleted photo messages (captions decrypted, photo bytes untouched), oldest-first. */
@@ -433,8 +433,8 @@ export async function deleteMessage(messageId: string, conversationId: string): 
   if (message.sender_id !== auth.user.id) throw new Error("You can only delete your own messages.");
   if (message.deleted_at) return;
 
-  if (message.kind === "image" && message.attachment_path) {
-    if (!message.attachment_path.startsWith(`${conversationId}/`)) throw new Error("Invalid photo path.");
+  if (message.attachment_path) {
+    if (!message.attachment_path.startsWith(`${conversationId}/`)) throw new Error("Invalid attachment path.");
     const { error: storageError } = await supabase.storage
       .from("message-attachments")
       .remove([message.attachment_path]);
@@ -570,6 +570,57 @@ export async function loadAttachment(conversationId: string, message: DecryptedM
   if (error || !data) throw new Error("Photo could not be downloaded.");
   const plain = await decryptBytes(key, await data.arrayBuffer(), message.attachmentIv);
   return URL.createObjectURL(new Blob([plain], { type: "image/jpeg" }));
+}
+
+export async function sendVideoMessage(conversationId: string, senderId: string, blob: Blob, caption = "", replyToMessageId?: string | null) {
+  const keys = await loadConversationKeys(conversationId);
+  const version = Math.max(...keys.keys());
+  const key = keys.get(version);
+  if (!key) throw new Error("No usable conversation key.");
+  const { ciphertext: videoBytes, iv: attachmentIv } = await encryptBytes(key, await blob.arrayBuffer());
+  const attachmentPath = `${conversationId}/${crypto.randomUUID()}.enc`;
+  const { error: uploadError } = await supabase.storage.from("message-attachments").upload(
+    attachmentPath,
+    new Blob([videoBytes], { type: "application/octet-stream" }),
+    { contentType: "application/octet-stream", upsert: false },
+  );
+  if (uploadError) throw new Error("Video could not be uploaded.");
+  const { ciphertext, iv } = await encryptMessage(key, caption);
+  const { error } = await supabase.from("messages").insert({
+    conversation_id: conversationId,
+    sender_id: senderId,
+    ciphertext,
+    iv,
+    key_version: version,
+    kind: "video",
+    attachment_path: attachmentPath,
+    attachment_iv: attachmentIv,
+    reply_to_message_id: replyToMessageId ?? null,
+  });
+  if (error) {
+    await supabase.storage.from("message-attachments").remove([attachmentPath]);
+    throw new Error("Video could not be sent. Please try again.");
+  }
+}
+
+/** Detect the container from the decrypted bytes; no mime type is stored. */
+export function videoMimeFromBytes(bytes: Uint8Array): string {
+  if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return "video/webm";
+  if (String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]) === "ftyp") return "video/mp4";
+  return "video/mp4";
+}
+
+export async function loadVideoAttachment(conversationId: string, message: DecryptedMessage): Promise<string> {
+  if (!message.attachmentPath || !message.attachmentIv || !message.attachmentPath.startsWith(`${conversationId}/`)) {
+    throw new Error("Video is unavailable.");
+  }
+  const keys = await loadConversationKeys(conversationId);
+  const key = keys.get(message.keyVersion);
+  if (!key) throw new Error("Video cannot be decrypted with your keys.");
+  const { data, error } = await supabase.storage.from("message-attachments").download(message.attachmentPath);
+  if (error || !data) throw new Error("Video could not be downloaded.");
+  const plain = new Uint8Array(await decryptBytes(key, await data.arrayBuffer(), message.attachmentIv));
+  return URL.createObjectURL(new Blob([plain], { type: videoMimeFromBytes(plain) }));
 }
 
 /** Each person has one encrypted reaction per message, under the current key version. Returns the resulting emoji, or null when removed. */
