@@ -37,6 +37,8 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
   const gesture = useRef<{ start: { x: number; y: number }; time: number; moved: boolean; pinched: boolean; onImage: boolean } | null>(null);
   const lastTap = useRef<{ x: number; y: number; time: number } | null>(null);
   const suppressClickUntil = useRef(0);
+  const pointerStartedOnImage = useRef(false);
+  const pendingClose = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wheelHandler = useRef<(event: WheelEvent) => void>(() => undefined);
 
   const activeIndex = messages.findIndex((photo) => photo.id === activeId);
@@ -78,6 +80,8 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
 
   function pointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (pendingClose.current) { clearTimeout(pendingClose.current); pendingClose.current = null; }
+    pointerStartedOnImage.current = event.target === imageRef.current;
     event.currentTarget.setPointerCapture(event.pointerId);
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.current.size === 1) {
@@ -99,6 +103,7 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
     if (before.length === 2 && after.length === 2) {
       const [a, b] = before;
       const [c, d] = after;
+      if (!a || !b || !c || !d) return;
       const distance = Math.hypot(a.x - b.x, a.y - b.y);
       if (distance < 1) return;
       const oldMid = localPoint((a.x + b.x) / 2, (a.y + b.y) / 2);
@@ -150,6 +155,7 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
     gesture.current = null;
     lastTap.current = null;
     touchStartX.current = null;
+    return () => { if (pendingClose.current) clearTimeout(pendingClose.current); };
   }, [current?.id]);
 
   useEffect(() => {
@@ -271,7 +277,13 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
             onDoubleClick={(event) => { event.stopPropagation(); toggleZoom(event.clientX, event.clientY); }}
             onClick={(event) => {
               event.stopPropagation();
-              if (event.target === event.currentTarget && !gesture.current?.onImage && transformRef.current.scale === 1 && performance.now() > suppressClickUntil.current && event.detail < 2 && !lastTap.current) onClose();
+              if (event.target === event.currentTarget && !pointerStartedOnImage.current && transformRef.current.scale === 1 && performance.now() > suppressClickUntil.current && event.detail < 2) {
+                pendingClose.current = setTimeout(() => {
+                  pendingClose.current = null;
+                  lastTap.current = null;
+                  if (transformRef.current.scale === 1 && performance.now() > suppressClickUntil.current) onClose();
+                }, 300);
+              }
             }}
           >
             <img ref={imageRef} src={url} alt="Shared photo enlarged" draggable={false} className={`max-h-full max-w-full shrink-0 select-none object-contain ${transform.scale > 1 ? "cursor-grab active:cursor-grabbing" : ""} ${animateZoom ? "transition-transform duration-150 motion-reduce:transition-none" : ""}`} style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})` }} onClick={(event) => event.stopPropagation()} />
