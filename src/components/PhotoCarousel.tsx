@@ -38,6 +38,7 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
   const lastTap = useRef<{ x: number; y: number; time: number } | null>(null);
   const suppressClickUntil = useRef(0);
   const pointerStartedOnImage = useRef(false);
+  const lastPointerType = useRef("mouse");
   const pendingClose = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wheelHandler = useRef<(event: WheelEvent) => void>(() => undefined);
 
@@ -80,6 +81,7 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
 
   function pointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    lastPointerType.current = event.pointerType;
     if (pendingClose.current) { clearTimeout(pendingClose.current); pendingClose.current = null; }
     pointerStartedOnImage.current = event.target === imageRef.current;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -274,7 +276,7 @@ export function PhotoCarousel({ conversationId, messages, selectedMessageId, onC
             onPointerCancel={pointerEnd}
             onTouchStart={(event) => event.stopPropagation()}
             onTouchEnd={(event) => event.stopPropagation()}
-            onDoubleClick={(event) => { event.stopPropagation(); toggleZoom(event.clientX, event.clientY); }}
+            onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); if (lastPointerType.current === "mouse") toggleZoom(event.clientX, event.clientY); }}
             onClick={(event) => {
               event.stopPropagation();
               if (event.target === event.currentTarget && !pointerStartedOnImage.current && transformRef.current.scale === 1 && performance.now() > suppressClickUntil.current && event.detail < 2) {
