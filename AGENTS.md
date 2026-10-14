@@ -14,4 +14,5 @@
 - Keep replies as same-conversation message references and display quoted content from already-decrypted in-memory messages; this avoids duplicate plaintext storage or a second lookup.
 - Tombstone deleted messages in place, clearing encrypted body and photo references after private file cleanup; this preserves reply and read-marker references.
 - Keep conversation photo browsing in a dedicated carousel that decrypts the selected photo and only preloads its neighbors; this keeps long chats memory-efficient.
+- Keep photo gesture handling in the carousel with dependency-free, tested geometry helpers; pointer capture and bounded cursor-anchored transforms prevent zoom gestures from navigating or dismissing photos.
 - Build reports from aggregate message metadata via invoker-rights database functions that never read encrypted columns; this keeps stats possible without exposing content.
