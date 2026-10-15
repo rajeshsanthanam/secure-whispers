@@ -15,6 +15,13 @@
       "when": 1791908878404,
       "tag": "0001_allow_video_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792078209032,
+      "tag": "0002_stats_add_videos",
+      "breakpoints": true
     }
   ]
 }

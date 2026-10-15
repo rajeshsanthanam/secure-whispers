@@ -11,6 +11,7 @@ import { listConversations } from "@/lib/messaging";
 type Stats = {
   total: number;
   photos: number;
+  videos?: number;
   texts: number;
   edited: number;
   deleted: number;
@@ -99,6 +100,7 @@ function StatsScreen() {
                 ["Messages", s.total],
                 ["Text", s.texts],
                 ["Photos", s.photos],
+                ["Videos", s.videos ?? 0],
                 ["Edited", s.edited],
                 ["Deleted", s.deleted],
                 ["Reactions", s.reactions],
